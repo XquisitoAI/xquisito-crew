@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn mobile_main() {
@@ -15,13 +15,50 @@ fn set_has_orders(state: State<AppState>, has_orders: bool) {
     *state.has_orders.lock().unwrap() = has_orders;
 }
 
+#[tauri::command]
+fn get_fcm_token(app: tauri::AppHandle) -> Option<String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        // Intentar múltiples rutas posibles en Android
+        let candidates = [
+            "/data/data/com.xquisito.crew/files/fcm_token.txt".to_string(),
+            "/data/user/0/com.xquisito.crew/files/fcm_token.txt".to_string(),
+        ];
+        for path in &candidates {
+            if let Ok(token) = std::fs::read_to_string(path) {
+                let t = token.trim().to_string();
+                if !t.is_empty() {
+                    return Some(t);
+                }
+            }
+        }
+        // Fallback: usar el directorio de datos de Tauri
+        if let Ok(data_dir) = app.path().app_data_dir() {
+            let path = data_dir.join("fcm_token.txt");
+            if let Ok(token) = std::fs::read_to_string(&path) {
+                let t = token.trim().to_string();
+                if !t.is_empty() {
+                    return Some(t);
+                }
+            }
+        }
+        return None;
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        None
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState {
             has_orders: Mutex::new(false),
         })
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![set_has_orders])
+        .invoke_handler(tauri::generate_handler![set_has_orders, get_fcm_token])
         .setup(|app| {
             #[cfg(desktop)]
             {

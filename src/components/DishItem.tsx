@@ -6,16 +6,16 @@ const STATUS_LABELS: Record<DishStatus, string> = {
   delivered: "Entregado",
 };
 
-const STATUS_COLORS: Record<DishStatus, string> = {
-  preparing: "bg-amber-100 text-amber-800 border-amber-300",
-  ready: "bg-blue-100 text-blue-800 border-blue-300",
-  delivered: "bg-emerald-100 text-emerald-800 border-emerald-300",
+const STATUS_BADGE: Record<DishStatus, string> = {
+  preparing: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  ready: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  delivered: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
 };
 
 const BUTTON_ACTIVE: Record<DishStatus, string> = {
-  preparing: "bg-amber-500 text-white",
-  ready: "bg-blue-500 text-white",
-  delivered: "bg-emerald-500 text-white",
+  preparing: "bg-amber-500 text-white border-amber-500",
+  ready: "bg-blue-500 text-white border-blue-500",
+  delivered: "bg-emerald-500 text-white border-emerald-500",
 };
 
 interface DishItemProps {
@@ -27,38 +27,53 @@ const STATUSES: DishStatus[] = ["preparing", "ready", "delivered"];
 
 export default function DishItem({ dish, onStatusChange }: DishItemProps) {
   return (
-    <div className="flex flex-col gap-2 py-3 border-b border-gray-100 last:border-0">
+    <div className="flex flex-col gap-3 pb-4 border-b border-white/10 last:border-0 last:pb-0">
+      {/* Info del plato */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {dish.images?.[0] && (
+        <div className="flex items-center gap-3 min-w-0">
+          {dish.images?.[0] ? (
             <img
               src={dish.images[0]}
               alt={dish.item}
-              className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+              className="w-11 h-11 rounded-xl object-cover shrink-0"
             />
+          ) : (
+            <div className="w-11 h-11 rounded-xl bg-white/10 shrink-0 flex items-center justify-center">
+              <img
+                src="/logo-short-green.webp"
+                alt=""
+                className="w-7 h-7 opacity-50"
+              />
+            </div>
           )}
           <div className="min-w-0">
-            <p className="font-medium text-gray-800 truncate">{dish.item}</p>
-            <p className="text-sm text-gray-500">x{dish.quantity}</p>
+            <p className="font-semibold text-white truncate">{dish.item}</p>
+            <p className="text-sm text-white/50">
+              x{dish.quantity}
+              {dish.orderedBy && (
+                <span className="ml-1 text-white/50">· {dish.orderedBy}</span>
+              )}
+            </p>
           </div>
         </div>
         <span
-          className={`text-xs px-2 py-1 rounded-full border font-medium flex-shrink-0 ${STATUS_COLORS[dish.status]}`}
+          className={`text-xs px-2.5 py-1 rounded-full border font-medium shrink-0 ${STATUS_BADGE[dish.status]}`}
         >
           {STATUS_LABELS[dish.status]}
         </span>
       </div>
 
+      {/* Botones de status */}
       <div className="flex gap-2">
         {STATUSES.map((s) => (
           <button
             key={s}
             onClick={() => onStatusChange(dish.id, s)}
             disabled={dish.status === s}
-            className={`flex-1 py-1.5 text-sm rounded-lg font-medium border transition-all ${
+            className={`flex-1 py-1 text-sm rounded-full font-medium border transition-all active:scale-95 ${
               dish.status === s
                 ? BUTTON_ACTIVE[s]
-                : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+                : "bg-transparent text-white/50 border-white/20 hover:border-white/40"
             }`}
           >
             {STATUS_LABELS[s]}

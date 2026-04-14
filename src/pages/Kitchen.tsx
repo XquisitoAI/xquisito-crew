@@ -1,12 +1,11 @@
 import { useCallback, useEffect } from "react";
-import { useClerk } from "@clerk/clerk-react";
+import { useClerk, useAuth } from "@clerk/clerk-react";
 import { LogOut } from "lucide-react";
 import { useKitchenOrders } from "../hooks/useKitchenOrders";
 import { useSocket } from "../hooks/useSocket";
 import OrderCarousel from "../components/OrderCarousel";
 import type { DishStatus } from "../types";
 
-// Muestra la ventana Tauri (si estamos en desktop)
 async function showWindow() {
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -14,22 +13,16 @@ async function showWindow() {
     await win.show();
     await win.setFocus();
     await win.unminimize();
-  } catch {
-    // Browser — ignorar
-  }
+  } catch {}
 }
 
-// Notifica a Rust si hay órdenes (bloquea cierre desde cualquier lugar)
 async function syncHasOrders(hasOrders: boolean) {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_has_orders", { hasOrders });
-  } catch {
-    // Browser — ignorar
-  }
+  } catch {}
 }
 
-// Envía notificación nativa y registra handler para click → abrir ventana
 async function sendDesktopNotification(title: string, body: string) {
   try {
     const {
@@ -38,32 +31,68 @@ async function sendDesktopNotification(title: string, body: string) {
       sendNotification,
       onAction,
     } = await import("@tauri-apps/plugin-notification");
-
     let permission = await isPermissionGranted();
     if (!permission) {
       const result = await requestPermission();
       permission = result === "granted";
     }
     if (!permission) return;
-
-    // Al hacer click en la notificación → mostrar ventana
     await onAction(() => showWindow());
-
-    sendNotification({ title, body });
+    sendNotification({ title, body, icon: "ic_notification" });
   } catch {
-    // Fallback: Web Notifications API (browser / desarrollo)
     if ("Notification" in window) {
-      const permission =
+      const p =
         Notification.permission === "granted"
           ? "granted"
           : await Notification.requestPermission();
-      if (permission === "granted") new Notification(title, { body });
+      if (p === "granted") new Notification(title, { body });
+    }
+  }
+}
+
+async function registerFcmToken(authToken: string) {
+  const MAX_ATTEMPTS = 6;
+  const DELAY_MS = 3000;
+
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const token = await invoke<string | null>("get_fcm_token");
+      if (token) {
+        const { saveFcmToken } = await import("../services/api");
+        await saveFcmToken(authToken, token, "android");
+        return;
+      }
+    } catch {
+      return; // No es Android
+    }
+    // Token aún no disponible, esperar antes de reintentar
+    await new Promise((r) => setTimeout(r, DELAY_MS));
+  }
+}
+
+async function requestNotificationPermission() {
+  try {
+    const { isPermissionGranted, requestPermission } = await import(
+      "@tauri-apps/plugin-notification"
+    );
+    const granted = await isPermissionGranted();
+    if (!granted) await requestPermission();
+  } catch {
+    if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
     }
   }
 }
 
 export default function Kitchen() {
   const { signOut } = useClerk();
+  const { getToken } = useAuth();
+
+  useEffect(() => {
+    requestNotificationPermission();
+    getToken().then((t) => { if (t) registerFcmToken(t); });
+  }, [getToken]);
 
   const {
     orders,
@@ -75,7 +104,6 @@ export default function Kitchen() {
     updateDishFromSocket,
   } = useKitchenOrders();
 
-  // Sincronizar con Rust si hay órdenes (bloquea cierre desde cualquier lugar)
   useEffect(() => {
     syncHasOrders(orders.length > 0);
   }, [orders.length]);
@@ -84,16 +112,14 @@ export default function Kitchen() {
     (orderId: string) => removeOrder(orderId),
     [removeOrder],
   );
-
   const handleDishStatusChanged = useCallback(
     (dishId: string, status: DishStatus) =>
       updateDishFromSocket(dishId, status),
     [updateDishFromSocket],
   );
-
   const handleRefetch = useCallback(() => {
     fetchOrders();
-    showWindow(); // Abre la ventana automáticamente si estaba minimizada
+    showWindow();
     sendDesktopNotification("Xquisito Crew", "Nueva orden recibida");
   }, [fetchOrders]);
 
@@ -104,44 +130,57 @@ export default function Kitchen() {
   });
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-100">
+    <div
+      className="min-h-screen flex flex-col"
+      style={{
+        background: "linear-gradient(to bottom right, #0a8b9b, #0d3d43)",
+      }}
+    >
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-xs font-bold">XC</span>
-          </div>
-          <div>
-            <h1 className="font-bold text-gray-800 leading-tight">
-              Xquisito Crew
-            </h1>
-            <p className="text-xs text-gray-500">
-              {orders.length} orden(es) pendiente(s)
-            </p>
-          </div>
-        </div>
+      <header className="px-5 pt-5 pb-2 flex items-center justify-between">
+        <img src="/logo-short-green.webp" className="w-8 h-8" alt="Xquisito" />
         <button
           onClick={() => signOut()}
-          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
-          title="Cerrar sesión"
+          className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
         >
           <LogOut className="w-4 h-4" />
         </button>
       </header>
 
-      {/* Contenido */}
-      <main className="flex-1 flex flex-col p-4 min-h-0">
+      {/* Logo central */}
+      <div className="flex flex-col items-center pb-6 gap-2">
+        {/*<div className="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center mb-1">
+          <img
+            src="/logo-short-green.webp"
+            alt="Xquisito"
+            className="w-14 h-14"
+          />
+        </div>*/}
+        <h1 className="text-white font-semibold text-xl">Xquisito Crew</h1>
+        <p className="text-white/50 text-sm">
+          {orders.length} orden(es) pendiente(s)
+        </p>
+      </div>
+
+      {/* Panel oscuro inferior */}
+      <div
+        className="flex-1 rounded-t-4xl px-5 pt-6 pb-6 flex flex-col min-h-0"
+        style={{
+          background: "rgba(10, 50, 56, 0.85)",
+          backdropFilter: "blur(10px)",
+        }}
+      >
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="w-8 h-8 border-4 border-gray-300 border-t-green-600 rounded-full animate-spin" />
+            <div className="w-8 h-8 border-4 border-white/20 border-t-white/80 rounded-full animate-spin" />
           </div>
         ) : error ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-red-500">
-            <p className="font-medium">Error al cargar órdenes</p>
-            <p className="text-sm text-gray-400">{error}</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/70">
+            <p className="font-medium text-white">Error al cargar órdenes</p>
+            <p className="text-sm">{error}</p>
             <button
               onClick={fetchOrders}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
+              className="px-4 py-2 bg-white/20 text-white rounded-full text-sm font-medium hover:bg-white/30"
             >
               Reintentar
             </button>
@@ -149,7 +188,7 @@ export default function Kitchen() {
         ) : (
           <OrderCarousel orders={orders} onDishStatusChange={updateDish} />
         )}
-      </main>
+      </div>
     </div>
   );
 }

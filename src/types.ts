@@ -8,12 +8,14 @@ export interface Dish {
   quantity: number;
   status: DishStatus;
   images: string[];
+  orderedBy?: string | null;
 }
 
 export interface Order {
   id: string;
   orderType: OrderType;
   identifier: string;
+  customerName?: string | null;
   createdAt: string;
   dishes: Dish[];
 }

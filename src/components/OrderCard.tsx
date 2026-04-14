@@ -2,19 +2,19 @@ import type { Order, DishStatus } from "../types";
 import DishItem from "./DishItem";
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
-  tap: "Tap Order",
+  tap: "Tap Order & Pay",
   pick_and_go: "Pick & Go",
   room: "Room Service",
   tap_pay: "Tap & Pay",
-  flex_bill: "FlexBill",
+  flex_bill: "Flex Bill",
 };
 
 const ORDER_TYPE_COLORS: Record<string, string> = {
-  tap: "bg-blue-100 text-blue-700",
-  pick_and_go: "bg-orange-100 text-orange-700",
-  room: "bg-pink-100 text-pink-700",
-  tap_pay: "bg-cyan-100 text-cyan-700",
-  flex_bill: "bg-purple-100 text-purple-700",
+  tap: "bg-blue-500/20 text-blue-300",
+  pick_and_go: "bg-orange-500/20 text-orange-300",
+  room: "bg-pink-500/20 text-pink-300",
+  tap_pay: "bg-cyan-500/20 text-cyan-300",
+  flex_bill: "bg-purple-500/20 text-purple-300",
 };
 
 interface OrderCardProps {
@@ -37,27 +37,37 @@ export default function OrderCard({
   const total = order.dishes.length;
 
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-100 flex flex-col h-full">
+    <div
+      className="rounded-2xl overflow-hidden"
+      style={{ background: "rgba(255,255,255,0.07)" }}
+    >
       {/* Header */}
-      <div className="p-4 border-b border-gray-100">
+      <div className="px-5 pt-5 pb-4 border-b border-white/10">
         <div className="flex items-center justify-between mb-2">
           <span
-            className={`text-xs px-2 py-1 rounded-full font-medium ${ORDER_TYPE_COLORS[order.orderType]}`}
+            className={`text-xs px-3 py-1 rounded-full font-medium ${ORDER_TYPE_COLORS[order.orderType] ?? "bg-white/10 text-white/70"}`}
           >
-            {ORDER_TYPE_LABELS[order.orderType]}
+            {ORDER_TYPE_LABELS[order.orderType] ?? order.orderType}
           </span>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-white/40">
             {formatTime(order.createdAt)}
           </span>
         </div>
-        <h2 className="text-xl font-bold text-gray-800">{order.identifier}</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <div className="flex items-baseline gap-1.5 flex-wrap">
+          <h2 className="text-xl font-bold text-white">{order.identifier}</h2>
+          {order.customerName && (
+            <span className="text-base text-white/80">
+              — {order.customerName}
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-white/50 mt-0.5">
           {delivered}/{total} entregados
         </p>
       </div>
 
       {/* Dishes */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="px-5 py-4 flex flex-col gap-4">
         {order.dishes.map((dish) => (
           <DishItem
             key={dish.id}
