@@ -2,10 +2,14 @@ import { useState } from "react";
 import { useAuth, useSignIn } from "@clerk/clerk-react";
 import { Mail, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 import Kitchen from "./pages/Kitchen";
+import Printers from "./pages/Printers";
+
+type Page = "kitchen" | "printers";
 
 export default function App() {
   const { isLoaded, isSignedIn } = useAuth();
   const { signIn, setActive } = useSignIn();
+  const [page, setPage] = useState<Page>("kitchen");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -105,7 +109,11 @@ export default function App() {
                 onClick={() => setShowPassword((v) => !v)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
               </button>
             </div>
 
@@ -128,5 +136,9 @@ export default function App() {
     );
   }
 
-  return <Kitchen />;
+  if (page === "printers") {
+    return <Printers onBack={() => setPage("kitchen")} />;
+  }
+
+  return <Kitchen onOpenPrinters={() => setPage("printers")} />;
 }

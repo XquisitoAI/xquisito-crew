@@ -1,18 +1,17 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useClerk, useAuth } from "@clerk/clerk-react";
-import { LogOut } from "lucide-react";
+import { LogOut, PrinterIcon } from "lucide-react";
 import { useKitchenOrders } from "../hooks/useKitchenOrders";
 import { useSocket } from "../hooks/useSocket";
+import { usePrinting } from "../hooks/usePrinting";
 import OrderCarousel from "../components/OrderCarousel";
+import { deleteFcmToken } from "../services/api";
 import type { DishStatus } from "../types";
 
 async function showWindow() {
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    const win = getCurrentWindow();
-    await win.show();
-    await win.setFocus();
-    await win.unminimize();
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("show_main_window");
   } catch {}
 }
 
@@ -29,7 +28,6 @@ async function sendDesktopNotification(title: string, body: string) {
       isPermissionGranted,
       requestPermission,
       sendNotification,
-      onAction,
     } = await import("@tauri-apps/plugin-notification");
     let permission = await isPermissionGranted();
     if (!permission) {
@@ -37,8 +35,7 @@ async function sendDesktopNotification(title: string, body: string) {
       permission = result === "granted";
     }
     if (!permission) return;
-    await onAction(() => showWindow());
-    sendNotification({ title, body, icon: "ic_notification" });
+    await sendNotification({ title, body });
   } catch {
     if ("Notification" in window) {
       const p =
@@ -85,14 +82,48 @@ async function requestNotificationPermission() {
   }
 }
 
-export default function Kitchen() {
+interface Props {
+  onOpenPrinters: () => void;
+}
+
+export default function Kitchen({ onOpenPrinters }: Props) {
   const { signOut } = useClerk();
   const { getToken } = useAuth();
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      const token = await getToken();
+      const fcmToken = await (async () => {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          return await invoke<string | null>("get_fcm_token");
+        } catch { return null; }
+      })();
+      if (token && fcmToken) await deleteFcmToken(token, fcmToken);
+    } catch {}
+    signOut();
+  }, [getToken, signOut]);
+
   useEffect(() => {
     requestNotificationPermission();
-    getToken().then((t) => { if (t) registerFcmToken(t); });
+    getToken().then((t) => {
+      if (t) registerFcmToken(t);
+    });
   }, [getToken]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/plugin-notification")
+      .then(({ onAction }) => onAction(() => showWindow()))
+      .then((listener) => { unlisten = () => listener.unregister(); })
+      .catch(() => {});
+    return () => { unlisten?.(); };
+  }, []);
+
+  const { printJob } = usePrinting();
+
+  const [newOrderAlert, setNewOrderAlert] = useState(false);
+  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     orders,
@@ -108,6 +139,28 @@ export default function Kitchen() {
     syncHasOrders(orders.length > 0);
   }, [orders.length]);
 
+  // Refetch al volver al frente (Android: visibilitychange, Windows: foco de ventana Tauri)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") fetchOrders();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [fetchOrders]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    import("@tauri-apps/api/window")
+      .then(({ getCurrentWindow }) =>
+        getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+          if (focused) fetchOrders();
+        }),
+      )
+      .then((fn) => { unlisten = fn; })
+      .catch(() => {});
+    return () => { unlisten?.(); };
+  }, [fetchOrders]);
+
   const handleOrderClosed = useCallback(
     (orderId: string) => removeOrder(orderId),
     [removeOrder],
@@ -119,32 +172,55 @@ export default function Kitchen() {
   );
   const handleRefetch = useCallback(() => {
     fetchOrders();
-    showWindow();
+    // Banner in-app: siempre visible independientemente del foco de la ventana
+    setNewOrderAlert(true);
+    if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+    alertTimerRef.current = setTimeout(() => setNewOrderAlert(false), 3500);
+    // Notificación del OS + traer ventana (cuando está en segundo plano)
     sendDesktopNotification("Xquisito Crew", "Nueva orden recibida");
+    if (document.visibilityState !== "visible") showWindow();
   }, [fetchOrders]);
 
   useSocket({
     onOrderClosed: handleOrderClosed,
     onDishStatusChanged: handleDishStatusChanged,
     onRefetch: handleRefetch,
+    onPrintJob: printJob,
   });
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="relative min-h-screen flex flex-col"
       style={{
         background: "linear-gradient(to bottom right, #0a8b9b, #0d3d43)",
       }}
     >
+      {/* Banner nueva orden */}
+      {newOrderAlert && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-emerald-500 text-white px-5 py-2.5 rounded-full font-semibold text-sm shadow-lg pointer-events-none"
+          style={{ animation: "fadeSlideDown 0.25s ease" }}>
+          <span className="w-2 h-2 rounded-full bg-white animate-ping inline-block" />
+          Nueva orden recibida
+        </div>
+      )}
+
       {/* Header */}
       <header className="px-5 pt-5 pb-2 flex items-center justify-between">
         <img src="/logo-short-green.webp" className="w-8 h-8" alt="Xquisito" />
-        <button
-          onClick={() => signOut()}
-          className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onOpenPrinters}
+            className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <PrinterIcon className="w-4 h-4" />
+          </button>
+          <button
+            onClick={handleSignOut}
+            className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </header>
 
       {/* Logo central */}

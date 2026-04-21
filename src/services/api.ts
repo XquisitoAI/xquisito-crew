@@ -59,3 +59,66 @@ export async function saveFcmToken(
     body: JSON.stringify({ token: fcmToken, platform }),
   });
 }
+
+export async function deleteFcmToken(token: string, fcmToken: string) {
+  return authFetch("/api/kitchen/fcm-token", token, {
+    method: "DELETE",
+    body: JSON.stringify({ token: fcmToken }),
+  });
+}
+
+export interface Branch {
+  id: string;
+  name: string;
+  branch_number: number;
+}
+
+export async function getBranches(token: string): Promise<Branch[]> {
+  const data = await authFetch("/api/kitchen/branches", token);
+  return data.branches ?? [];
+}
+
+export interface PrinterRecord {
+  id: string;
+  branch_id: string;
+  ip: string | null;
+  port: number | null;
+  name: string | null;
+  role: "bar" | "kitchen" | "other" | "all" | null;
+  is_active: boolean;
+  last_seen_at: string | null;
+  connection_type: "wifi" | "usb";
+  usb_device_name: string | null;
+}
+
+export async function getPrinters(token: string, branchId: string): Promise<PrinterRecord[]> {
+  const data = await authFetch(`/api/pos/branch/${branchId}/printers`, token);
+  return data.printers ?? [];
+}
+
+export async function syncPrinters(
+  token: string,
+  branchId: string,
+  printers: (
+    | { ip: string; port: number; connection_type?: "wifi" }
+    | { usb_device_name: string; vendor_id?: number; product_id?: number; connection_type: "usb" }
+  )[],
+): Promise<PrinterRecord[]> {
+  const data = await authFetch("/api/kitchen/printers/sync", token, {
+    method: "POST",
+    body: JSON.stringify({ branchId, printers }),
+  });
+  return data.printers ?? [];
+}
+
+export async function updatePrinter(
+  token: string,
+  printerId: string,
+  updates: { name?: string; role?: string; is_active?: boolean },
+): Promise<PrinterRecord> {
+  const data = await authFetch(`/api/kitchen/printers/${printerId}`, token, {
+    method: "PUT",
+    body: JSON.stringify(updates),
+  });
+  return data.printer;
+}

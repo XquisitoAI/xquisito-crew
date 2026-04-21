@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { io, Socket } from "socket.io-client";
 import type { DishStatus, Order } from "../types";
+import type { PrintJobData } from "./usePrinting";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -9,12 +10,14 @@ interface UseSocketProps {
   onOrderClosed: (orderId: string) => void;
   onDishStatusChanged: (dishId: string, status: DishStatus) => void;
   onRefetch: () => void;
+  onPrintJob?: (data: PrintJobData) => void;
 }
 
 export function useSocket({
   onOrderClosed,
   onDishStatusChanged,
   onRefetch,
+  onPrintJob,
 }: UseSocketProps) {
   const { getToken } = useAuth();
   const socketRef = useRef<Socket | null>(null);
@@ -45,8 +48,8 @@ export function useSocket({
       });
 
       // Nueva orden → refetch para obtener datos completos del backend
-      socket.on("dashboard:new-transaction", () => {
-        onRefetch();
+      socket.on("dashboard:new-transaction", (data: { notifyKitchen?: boolean }) => {
+        if (data?.notifyKitchen !== false) onRefetch();
       });
 
       // Orden cerrada desde otro lugar
@@ -74,6 +77,19 @@ export function useSocket({
         },
       );
 
+      // Dish status cambiado desde otro dispositivo Crew
+      socket.on(
+        "kitchen:dish-status-changed",
+        (data: { dishId: string; status: DishStatus }) => {
+          onDishStatusChanged(data.dishId, data.status);
+        },
+      );
+
+      // Trabajo de impresión desde el backend
+      socket.on("kitchen:print_job", (data: PrintJobData) => {
+        onPrintJob?.(data);
+      });
+
       socket.on("disconnect", (reason) => {
         console.log("[CREW] Socket desconectado:", reason);
       });
@@ -84,5 +100,5 @@ export function useSocket({
     return () => {
       if (socket) socket.disconnect();
     };
-  }, [getToken, onOrderClosed, onDishStatusChanged, onRefetch]);
+  }, [getToken, onOrderClosed, onDishStatusChanged, onRefetch, onPrintJob]);
 }

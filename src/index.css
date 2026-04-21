@@ -21,3 +21,8 @@ body {
 #root {
   min-height: 100svh;
 }
+
+@keyframes fadeSlideDown {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}

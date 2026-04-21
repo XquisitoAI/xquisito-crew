@@ -1,0 +1,649 @@
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/clerk-react";
+import {
+  ArrowLeft,
+  Wifi,
+  PrinterIcon,
+  Loader2,
+  Play,
+  Check,
+  X,
+  ChevronDown,
+  Radio,
+  Cable,
+} from "lucide-react";
+import { usePrinters } from "../hooks/usePrinters";
+import {
+  getBranches,
+  getPrinters,
+  syncPrinters,
+  updatePrinter,
+  type Branch,
+  type PrinterRecord,
+} from "../services/api";
+
+const ROLES = [
+  {
+    value: "bar",
+    label: "Bar",
+    color: "bg-sky-500/20 text-sky-300 ring-sky-500/30",
+  },
+  {
+    value: "kitchen",
+    label: "Cocina",
+    color: "bg-orange-500/20 text-orange-300 ring-orange-500/30",
+  },
+  {
+    value: "other",
+    label: "Otro",
+    color: "bg-purple-500/20 text-purple-300 ring-purple-500/30",
+  },
+  {
+    value: "all",
+    label: "Todos",
+    color: "bg-emerald-500/20 text-emerald-300 ring-emerald-500/30",
+  },
+] as const;
+
+function RoleBadge({ role }: { role: string }) {
+  const r = ROLES.find((r) => r.value === role);
+  if (!r) return null;
+  return (
+    <span
+      className={`mt-1 self-start inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ${r.color}`}
+    >
+      {r.label}
+    </span>
+  );
+}
+
+interface Props {
+  onBack: () => void;
+}
+
+interface EditState {
+  name: string;
+  role: string;
+}
+
+export default function Printers({ onBack }: Props) {
+  const { getToken } = useAuth();
+  const {
+    scanning,
+    testingIp,
+    scan,
+    printTest,
+    usbDevices,
+    scanningUsb,
+    testingUsbDevice,
+    scanUsb,
+    printTestUsb,
+  } = usePrinters();
+
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>("");
+  const [branchOpen, setBranchOpen] = useState(false);
+  const [printers, setPrinters] = useState<PrinterRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editState, setEditState] = useState<EditState>({ name: "", role: "" });
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [isMainPrinter, setIsMainPrinter] = useState(
+    () => localStorage.getItem("crew_is_printer") === "true",
+  );
+
+  // Estado para edición de impresoras USB (pending — no tienen ID aún)
+  const [editingUsbDevice, setEditingUsbDevice] = useState<string | null>(null);
+  const [editUsbState, setEditUsbState] = useState<EditState>({ name: "", role: "" });
+  const [savingUsbDevice, setSavingUsbDevice] = useState<string | null>(null);
+  const [usbError, setUsbError] = useState<string | null>(null);
+
+  const toggleMainPrinter = () => {
+    const next = !isMainPrinter;
+    setIsMainPrinter(next);
+    localStorage.setItem("crew_is_printer", String(next));
+  };
+
+  // Load branches on mount
+  useEffect(() => {
+    getToken().then(async (token) => {
+      if (!token) return;
+      try {
+        const list = await getBranches(token);
+        setBranches(list);
+        if (list.length === 1) {
+          setSelectedBranch(list[0].id);
+          localStorage.setItem("crew_branch_id", list[0].id);
+        }
+      } catch (e: any) {
+        setError(e?.message || "Error al cargar sucursales");
+      }
+    });
+  }, [getToken]);
+
+  // Load printers when branch changes
+  const loadPrinters = useCallback(
+    async (branchId: string) => {
+      const token = await getToken();
+      if (!token || !branchId) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const list = await getPrinters(token, branchId);
+        setPrinters(list);
+      } catch (e: any) {
+        setError(e?.message || "Error al cargar impresoras");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [getToken],
+  );
+
+  useEffect(() => {
+    if (selectedBranch) loadPrinters(selectedBranch);
+  }, [selectedBranch, loadPrinters]);
+
+  // WiFi scan
+  const handleScan = useCallback(async () => {
+    if (!selectedBranch) return;
+    const found = await scan();
+    if (found.length === 0) return;
+    const token = await getToken();
+    if (!token) return;
+    try {
+      const updated = await syncPrinters(token, selectedBranch, found);
+      setPrinters(updated);
+    } catch (e: any) {
+      setError(e?.message || "Error al sincronizar impresoras");
+    }
+  }, [scan, getToken, selectedBranch]);
+
+  // USB scan — solo detecta localmente, NO guarda en DB todavía
+  const handleScanUsb = useCallback(async () => {
+    setUsbError(null);
+    try {
+      await scanUsb();
+    } catch (e: any) {
+      setUsbError(e?.message || String(e));
+    }
+  }, [scanUsb]);
+
+  // WiFi edit
+  const startEdit = (p: PrinterRecord) => {
+    setEditingId(p.id);
+    setEditState({ name: p.name ?? "", role: p.role ?? "" });
+  };
+  const cancelEdit = () => setEditingId(null);
+  const saveEdit = async (printerId: string) => {
+    const token = await getToken();
+    if (!token) return;
+    setSavingId(printerId);
+    try {
+      const updated = await updatePrinter(token, printerId, {
+        name: editState.name || undefined,
+        role: editState.role || undefined,
+      });
+      setPrinters((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setEditingId(null);
+    } catch (e: any) {
+      setError(e?.message || "Error al guardar");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // USB edit — impresoras ya guardadas en DB
+  const startEditUsb = (p: PrinterRecord) => {
+    setEditingUsbDevice(p.usb_device_name!);
+    setEditUsbState({ name: p.name ?? "", role: p.role ?? "" });
+  };
+  const cancelEditUsb = () => setEditingUsbDevice(null);
+  const saveEditUsb = async (printerId: string) => {
+    const token = await getToken();
+    if (!token) return;
+    setSavingUsbDevice(printerId);
+    try {
+      const updated = await updatePrinter(token, printerId, {
+        name: editUsbState.name || undefined,
+        role: editUsbState.role || undefined,
+      });
+      setPrinters((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setEditingUsbDevice(null);
+    } catch (e: any) {
+      setUsbError(e?.message || "Error al guardar");
+    } finally {
+      setSavingUsbDevice(null);
+    }
+  };
+
+  // USB nuevo — dispositivo detectado localmente, aún no en DB
+  const [editingNewUsb, setEditingNewUsb] = useState<string | null>(null);
+  const [editNewUsbState, setEditNewUsbState] = useState<EditState>({ name: "", role: "" });
+  const [savingNewUsb, setSavingNewUsb] = useState<string | null>(null);
+
+  const saveNewUsb = async (deviceName: string) => {
+    if (!editNewUsbState.role) {
+      setUsbError("Asigna un rol antes de guardar.");
+      return;
+    }
+    const token = await getToken();
+    if (!token || !selectedBranch) return;
+    setSavingNewUsb(deviceName);
+    setUsbError(null);
+    try {
+      const updated = await syncPrinters(token, selectedBranch, [{
+        usb_device_name: deviceName,
+        connection_type: "usb",
+      }]);
+      // Ahora actualizar nombre y rol del registro recién creado
+      const created = updated.find((p) => p.usb_device_name === deviceName);
+      if (created) {
+        const final = await updatePrinter(token, created.id, {
+          name: editNewUsbState.name || undefined,
+          role: editNewUsbState.role,
+        });
+        setPrinters((prev) => {
+          const exists = prev.find((p) => p.id === final.id);
+          return exists ? prev.map((p) => (p.id === final.id ? final : p)) : [...prev, final];
+        });
+      }
+      setEditingNewUsb(null);
+    } catch (e: any) {
+      setUsbError(e?.message || "Error al guardar");
+    } finally {
+      setSavingNewUsb(null);
+    }
+  };
+
+  // Handle USB test — show friendly message on permission request
+  const handleTestUsb = useCallback(
+    async (deviceName: string) => {
+      try {
+        await printTestUsb(deviceName);
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        if (msg.includes("USB_PERMISSION_REQUESTED")) {
+          setUsbError("Permiso USB solicitado — acepta el diálogo y toca Test de nuevo.");
+        } else {
+          setUsbError(msg);
+        }
+      }
+    },
+    [printTestUsb],
+  );
+
+  const selectedBranchName =
+    branches.find((b) => b.id === selectedBranch)?.name ?? "Seleccionar sucursal";
+
+  const wifiPrinters = printers.filter((p) => p.connection_type !== "usb");
+  const usbPrinters = printers.filter((p) => p.connection_type === "usb");
+
+  return (
+    <div
+      className="min-h-screen flex flex-col"
+      style={{ background: "linear-gradient(to bottom right, #0a8b9b, #0d3d43)" }}
+    >
+      {/* Header */}
+      <header className="px-5 pt-5 pb-2 flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h1 className="text-white font-semibold text-base">Impresoras</h1>
+        <button
+          onClick={handleScan}
+          disabled={scanning || !selectedBranch}
+          className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40"
+        >
+          {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+        </button>
+      </header>
+
+      {/* Panel */}
+      <div
+        className="flex-1 rounded-t-4xl px-5 pt-6 pb-6 flex flex-col gap-4 mt-4"
+        style={{ background: "rgba(10, 50, 56, 0.85)", backdropFilter: "blur(10px)" }}
+      >
+        {/* Branch selector */}
+        <div className="relative">
+          <button
+            onClick={() => setBranchOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-white/10 rounded-2xl text-white text-sm"
+          >
+            <span>{selectedBranchName}</span>
+            <ChevronDown
+              className={`w-4 h-4 text-white/50 transition-transform ${branchOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {branchOpen && (
+            <ul className="absolute z-10 top-full mt-1 w-full bg-[#0a3238] border border-white/10 rounded-2xl overflow-hidden shadow-lg">
+              {branches.map((b) => (
+                <li key={b.id}>
+                  <button
+                    onClick={() => {
+                      setSelectedBranch(b.id);
+                      localStorage.setItem("crew_branch_id", b.id);
+                      setBranchOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-3 text-sm transition-colors ${
+                      selectedBranch === b.id
+                        ? "text-white bg-white/15"
+                        : "text-white/70 hover:bg-white/10"
+                    }`}
+                  >
+                    {b.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Toggle impresora principal */}
+        <button
+          onClick={toggleMainPrinter}
+          className={`flex items-center justify-between px-4 py-3 rounded-2xl ring-1 transition-colors ${
+            isMainPrinter ? "bg-emerald-500/15 ring-emerald-500/30" : "bg-white/5 ring-white/10"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <Radio className={`w-4 h-4 ${isMainPrinter ? "text-emerald-400" : "text-white/30"}`} />
+            <div className="text-left">
+              <p className={`text-sm font-medium ${isMainPrinter ? "text-emerald-300" : "text-white/50"}`}>
+                {isMainPrinter ? "Impresora principal activa" : "Este dispositivo no imprime"}
+              </p>
+              <p className="text-xs text-white/30">
+                {isMainPrinter
+                  ? "Las órdenes nuevas se imprimen aquí"
+                  : "Toca para activar la impresión automática"}
+              </p>
+            </div>
+          </div>
+          <div className={`w-10 h-6 rounded-full transition-colors relative ${isMainPrinter ? "bg-emerald-500" : "bg-white/15"}`}>
+            <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${isMainPrinter ? "left-5" : "left-1"}`} />
+          </div>
+        </button>
+
+        {/* Content */}
+        {!selectedBranch ? (
+          <div className="flex-1 flex items-center justify-center text-white/40 text-sm">
+            Selecciona una sucursal para ver sus impresoras
+          </div>
+        ) : loading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-white/50" />
+          </div>
+        ) : error ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/70">
+            <p className="text-sm text-center">{error}</p>
+            <button
+              onClick={() => loadPrinters(selectedBranch)}
+              className="px-4 py-2 bg-white/20 text-white rounded-full text-sm font-medium hover:bg-white/30"
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* ── Sección WiFi ── */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-white/50 text-xs uppercase tracking-wide px-1">
+                  WiFi · {wifiPrinters.length} impresora(s)
+                </p>
+                <button
+                  onClick={handleScan}
+                  disabled={scanning}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-full transition-colors disabled:opacity-50"
+                >
+                  {scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wifi className="w-3 h-3" />}
+                  Escanear
+                </button>
+              </div>
+
+              {wifiPrinters.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-4 text-white/40">
+                  <PrinterIcon className="w-8 h-8 opacity-30" />
+                  <p className="text-xs">No hay impresoras WiFi. Toca Escanear.</p>
+                </div>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {wifiPrinters.map((p) =>
+                    editingId === p.id ? (
+                      <li key={p.id} className="bg-white/10 rounded-2xl px-4 py-3 flex flex-col gap-3">
+                        <p className="text-white/50 text-xs font-mono">{p.ip}:{p.port}</p>
+                        <input
+                          value={editState.name}
+                          onChange={(e) => setEditState((s) => ({ ...s, name: e.target.value }))}
+                          placeholder="Nombre (ej. Barra, Cocina 1)"
+                          className="w-full px-3 py-2 bg-white/10 rounded-xl text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                        />
+                        <div className="flex gap-2 flex-wrap">
+                          {ROLES.map((r) => (
+                            <button
+                              key={r.value}
+                              onClick={() => setEditState((s) => ({ ...s, role: r.value }))}
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium ring-1 transition-colors ${
+                                editState.role === r.value
+                                  ? r.color
+                                  : "bg-white/5 text-white/40 ring-white/10 hover:bg-white/10 hover:text-white/70"
+                              }`}
+                            >
+                              {r.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={cancelEdit} className="p-2 rounded-lg text-white/50 hover:bg-white/10">
+                            <X className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => saveEdit(p.id)}
+                            disabled={savingId === p.id}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-xs rounded-full disabled:opacity-50"
+                          >
+                            {savingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            Guardar
+                          </button>
+                        </div>
+                      </li>
+                    ) : (
+                      <li key={p.id} className="flex items-center justify-between bg-white/10 rounded-2xl px-4 py-3">
+                        <button className="flex flex-col gap-0.5 text-left flex-1 min-w-0" onClick={() => startEdit(p)}>
+                          {p.name ? (
+                            <span className="text-white text-sm font-medium truncate">{p.name}</span>
+                          ) : (
+                            <span className="text-white/30 text-sm italic">Sin nombre — toca para editar</span>
+                          )}
+                          <span className="text-white/50 text-xs font-mono">{p.ip}:{p.port}</span>
+                          {p.role && <RoleBadge role={p.role} />}
+                        </button>
+                        <button
+                          onClick={() => printTest(p.ip!, p.port!)}
+                          disabled={testingIp === p.ip}
+                          className="ml-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white text-xs rounded-full transition-colors disabled:opacity-50 shrink-0"
+                        >
+                          {testingIp === p.ip ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                          Test
+                        </button>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
+            </div>
+
+            {/* ── Sección USB ── */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-white/50 text-xs uppercase tracking-wide px-1">
+                  USB · {usbPrinters.length} impresora(s)
+                </p>
+                <button
+                  onClick={handleScanUsb}
+                  disabled={scanningUsb}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs rounded-full transition-colors disabled:opacity-50"
+                >
+                  {scanningUsb ? <Loader2 className="w-3 h-3 animate-spin" /> : <Cable className="w-3 h-3" />}
+                  Detectar USB
+                </button>
+              </div>
+
+              {usbError && (
+                <p className="text-amber-400 text-xs px-1 mb-2">{usbError}</p>
+              )}
+
+              {/* Impresoras USB ya guardadas en DB */}
+              {usbPrinters.length > 0 && (
+                <ul className="flex flex-col gap-3 mb-3">
+                  {usbPrinters.map((p) =>
+                    editingUsbDevice === p.usb_device_name ? (
+                      <li key={p.id} className="bg-white/10 rounded-2xl px-4 py-3 flex flex-col gap-3">
+                        <p className="text-white/50 text-xs font-mono truncate">{p.usb_device_name}</p>
+                        <input
+                          value={editUsbState.name}
+                          onChange={(e) => setEditUsbState((s) => ({ ...s, name: e.target.value }))}
+                          placeholder="Nombre (ej. Barra USB)"
+                          className="w-full px-3 py-2 bg-white/10 rounded-xl text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                        />
+                        <div className="flex gap-2 flex-wrap">
+                          {ROLES.map((r) => (
+                            <button
+                              key={r.value}
+                              onClick={() => setEditUsbState((s) => ({ ...s, role: r.value }))}
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium ring-1 transition-colors ${
+                                editUsbState.role === r.value ? r.color : "bg-white/5 text-white/40 ring-white/10 hover:bg-white/10 hover:text-white/70"
+                              }`}
+                            >
+                              {r.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={cancelEditUsb} className="p-2 rounded-lg text-white/50 hover:bg-white/10">
+                            <X className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => saveEditUsb(p.id)}
+                            disabled={savingUsbDevice === p.id}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-xs rounded-full disabled:opacity-50"
+                          >
+                            {savingUsbDevice === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                            Guardar
+                          </button>
+                        </div>
+                      </li>
+                    ) : (
+                      <li key={p.id} className="flex items-center justify-between bg-white/10 rounded-2xl px-4 py-3">
+                        <button className="flex flex-col gap-0.5 text-left flex-1 min-w-0" onClick={() => startEditUsb(p)}>
+                          {p.name ? (
+                            <span className="text-white text-sm font-medium truncate">{p.name}</span>
+                          ) : (
+                            <span className="text-white/30 text-sm italic">Sin nombre — toca para editar</span>
+                          )}
+                          <span className="text-white/40 text-xs font-mono truncate">{p.usb_device_name}</span>
+                          {p.role && <RoleBadge role={p.role} />}
+                        </button>
+                        <button
+                          onClick={() => handleTestUsb(p.usb_device_name!)}
+                          disabled={testingUsbDevice === p.usb_device_name}
+                          className="ml-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white text-xs rounded-full transition-colors disabled:opacity-50 shrink-0"
+                        >
+                          {testingUsbDevice === p.usb_device_name ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                          Test
+                        </button>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              )}
+
+              {/* Dispositivos detectados localmente, aún no guardados */}
+              {(() => {
+                const savedDeviceNames = new Set(usbPrinters.map((p) => p.usb_device_name));
+                const newDevices = usbDevices.filter((d) => !savedDeviceNames.has(d.device_name));
+                if (newDevices.length === 0 && usbPrinters.length === 0) {
+                  return (
+                    <div className="flex flex-col items-center justify-center gap-2 py-4 text-white/40">
+                      <Cable className="w-8 h-8 opacity-30" />
+                      <p className="text-xs text-center">No hay impresoras USB detectadas.{"\n"}Asegúrate de que la impresora aparezca en{"\n"}Configuración → Impresoras y escáneres.</p>
+                    </div>
+                  );
+                }
+                if (newDevices.length === 0) return null;
+                return (
+                  <>
+                    <p className="text-white/30 text-xs px-1 mb-2">Detectadas — asigna un rol para guardar</p>
+                    <ul className="flex flex-col gap-3">
+                      {newDevices.map((d) =>
+                        editingNewUsb === d.device_name ? (
+                          <li key={d.device_name} className="bg-white/10 rounded-2xl px-4 py-3 flex flex-col gap-3 ring-1 ring-white/20">
+                            <p className="text-white/50 text-xs font-mono truncate">{d.device_name}</p>
+                            <input
+                              value={editNewUsbState.name}
+                              onChange={(e) => setEditNewUsbState((s) => ({ ...s, name: e.target.value }))}
+                              placeholder="Nombre (ej. Barra USB)"
+                              className="w-full px-3 py-2 bg-white/10 rounded-xl text-white text-sm placeholder:text-white/30 focus:outline-none focus:ring-1 focus:ring-white/30"
+                            />
+                            <div className="flex gap-2 flex-wrap">
+                              {ROLES.map((r) => (
+                                <button
+                                  key={r.value}
+                                  onClick={() => setEditNewUsbState((s) => ({ ...s, role: r.value }))}
+                                  className={`px-3 py-1.5 rounded-full text-xs font-medium ring-1 transition-colors ${
+                                    editNewUsbState.role === r.value ? r.color : "bg-white/5 text-white/40 ring-white/10 hover:bg-white/10 hover:text-white/70"
+                                  }`}
+                                >
+                                  {r.label}
+                                </button>
+                              ))}
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <button onClick={() => setEditingNewUsb(null)} className="p-2 rounded-lg text-white/50 hover:bg-white/10">
+                                <X className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => saveNewUsb(d.device_name)}
+                                disabled={savingNewUsb === d.device_name || !editNewUsbState.role}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-white/20 hover:bg-white/30 text-white text-xs rounded-full disabled:opacity-50"
+                              >
+                                {savingNewUsb === d.device_name ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                Guardar
+                              </button>
+                            </div>
+                          </li>
+                        ) : (
+                          <li key={d.device_name} className="flex items-center justify-between bg-white/5 rounded-2xl px-4 py-3 ring-1 ring-white/10">
+                            <button
+                              className="flex flex-col gap-0.5 text-left flex-1 min-w-0"
+                              onClick={() => { setEditingNewUsb(d.device_name); setEditNewUsbState({ name: "", role: "" }); }}
+                            >
+                              <span className="text-white/50 text-sm italic">Sin configurar — toca para asignar rol</span>
+                              <span className="text-white/30 text-xs font-mono truncate">{d.device_name}</span>
+                            </button>
+                            <button
+                              onClick={() => handleTestUsb(d.device_name)}
+                              disabled={testingUsbDevice === d.device_name}
+                              className="ml-3 flex items-center gap-1.5 px-3 py-1.5 bg-white/15 hover:bg-white/25 text-white text-xs rounded-full transition-colors disabled:opacity-50 shrink-0"
+                            >
+                              {testingUsbDevice === d.device_name ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                              Test
+                            </button>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </>
+                );
+              })()}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

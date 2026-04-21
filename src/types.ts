@@ -17,5 +17,6 @@ export interface Order {
   identifier: string;
   customerName?: string | null;
   createdAt: string;
+  folio?: string | number | null;
   dishes: Dish[];
 }

@@ -53,11 +53,18 @@ export default function OrderCard({
             {formatTime(order.createdAt)}
           </span>
         </div>
-        <div className="flex items-baseline gap-1.5 flex-wrap">
-          <h2 className="text-xl font-bold text-white">{order.identifier}</h2>
-          {order.customerName && (
-            <span className="text-base text-white/80">
-              — {order.customerName}
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="flex items-baseline gap-1.5 flex-wrap min-w-0">
+            <h2 className="text-xl font-bold text-white">{order.identifier}</h2>
+            {order.customerName && (
+              <span className="text-base text-white/80">
+                — {order.customerName}
+              </span>
+            )}
+          </div>
+          {order.folio != null && order.folio !== "" && (
+            <span className="shrink-0 text-sm font-mono font-semibold px-2 py-0.5 rounded-full bg-white/10 text-white/60">
+              #{String(order.folio).padStart(5, "0")}
             </span>
           )}
         </div>
