@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getPrinters, type PrinterRecord } from "../services/api";
 
@@ -113,7 +112,6 @@ function buildTicket(
 }
 
 export function usePrinting() {
-  const { getToken } = useAuth();
   const printersRef = useRef<PrinterRecord[]>([]);
   const branchIdRef = useRef<string | null>(null);
 
@@ -122,27 +120,33 @@ export function usePrinting() {
     if (!branchId) return;
     branchIdRef.current = branchId;
 
-    getToken().then(async (token) => {
-      if (!token) return;
-      try {
-        const list = await getPrinters(token, branchId);
-        printersRef.current = list.filter(
-          (p) => p.is_active !== false && p.role,
-        );
-        console.log(
-          `[PRINT] ${printersRef.current.length} impresora(s) cargadas para branch ${branchId}`,
-        );
-      } catch (e) {
-        console.warn("[PRINT] No se pudieron cargar impresoras:", e);
-      }
+    getPrinters(branchId).then((list) => {
+      printersRef.current = list.filter(
+        (p) => p.is_active !== false && p.role,
+      );
+      console.log(
+        `[PRINT] ${printersRef.current.length} impresora(s) cargadas para branch ${branchId}`,
+      );
+    }).catch((e) => {
+      console.warn("[PRINT] No se pudieron cargar impresoras:", e);
     });
-  }, [getToken]);
+  }, []);
 
   const printJob = useCallback(async (data: PrintJobData) => {
-    if (localStorage.getItem(IS_PRINTER_KEY) !== "true") return;
-    if (data.branchId !== branchIdRef.current) return;
+    const isPrinter = localStorage.getItem(IS_PRINTER_KEY);
+    console.log(`[PRINT] printJob llamado — isPrinter=${isPrinter} dataBranch=${data.branchId} myBranch=${branchIdRef.current}`);
+
+    if (isPrinter !== "true") {
+      console.log("[PRINT] Omitido — este dispositivo no es impresora");
+      return;
+    }
+    if (data.branchId !== branchIdRef.current) {
+      console.log(`[PRINT] Omitido — branchId no coincide (data=${data.branchId} vs local=${branchIdRef.current})`);
+      return;
+    }
 
     const printers = printersRef.current;
+    console.log(`[PRINT] Impresoras disponibles: ${printers.length}`);
     if (printers.length === 0) return;
 
     for (const printer of printers) {
@@ -155,35 +159,34 @@ export function usePrinting() {
           quantity,
           custom_fields,
         }));
+
+      console.log(`[PRINT] Impresora role=${printer.role} type=${printer.connection_type} — items a imprimir: ${printerItems.length}`);
       if (printerItems.length === 0) continue;
 
       const ticket = buildTicket(
         printerItems,
         data.orderInfo.identifier,
         printer.role,
-        data.orderInfo.folio,
+        data.orderInfo.folio ?? "",
         data.orderInfo.orderedBy,
       );
 
       if (printer.connection_type === "usb" && printer.usb_device_name) {
-        // Impresora USB
+        console.log(`[PRINT] 🖨️ Enviando a USB: ${printer.usb_device_name}`);
         invoke("print_raw_usb", {
           printerName: printer.usb_device_name,
           data: ticket,
         }).catch((e) =>
-          console.error(
-            `[PRINT-USB] Error al imprimir en USB ${printer.usb_device_name}:`,
-            e,
-          ),
+          console.error(`[PRINT] ❌ Error USB ${printer.usb_device_name}:`, e),
         );
       } else if (printer.ip && printer.port) {
-        // Impresora WiFi
+        console.log(`[PRINT] 🖨️ Enviando a WiFi: ${printer.ip}:${printer.port}`);
         invoke("print_raw", {
           ip: printer.ip,
           port: printer.port,
           data: ticket,
         }).catch((e) =>
-          console.error(`[PRINT] Error al imprimir en ${printer.ip}:`, e),
+          console.error(`[PRINT] ❌ Error WiFi ${printer.ip}:`, e),
         );
       }
     }

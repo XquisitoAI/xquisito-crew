@@ -19,15 +19,56 @@ fn set_has_orders(state: State<AppState>, has_orders: bool) {
 }
 
 #[tauri::command]
+fn notify_new_order(title: String, body: String) {
+    #[cfg(windows)]
+    {
+        // PowerShell toast notification — funciona siempre en Windows sin instalador
+        let script = format!(
+            r#"
+$app = '{title}'
+$msg = '{body}'
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null
+$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
+$template.SelectSingleNode('//text[@id=1]').InnerText = $app
+$template.SelectSingleNode('//text[@id=2]').InnerText = $msg
+$toast = [Windows.UI.Notifications.ToastNotification]::new($template)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Xquisito Crew').Show($toast)
+"#,
+            title = title.replace('\'', ""),
+            body = body.replace('\'', "")
+        );
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+}
+
+#[tauri::command]
 fn show_main_window(app: tauri::AppHandle) {
     #[cfg(desktop)]
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
+        // set_always_on_top momentáneo para forzar foco en Windows
+        let _ = window.set_always_on_top(true);
         let _ = window.set_focus();
+        let _ = window.set_always_on_top(false);
     }
     #[cfg(not(desktop))]
     let _ = app;
+}
+
+#[tauri::command]
+fn open_devtools(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.open_devtools();
+    }
 }
 
 // ============================================================
@@ -502,6 +543,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_has_orders,
             show_main_window,
+            notify_new_order,
+            open_devtools,
             get_fcm_token,
             scan_printers,
             print_raw,

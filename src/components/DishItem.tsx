@@ -1,7 +1,6 @@
 import type { CustomField, Dish, DishStatus } from "../types";
 
 function getOptions(customFields: CustomField[] | null | undefined): string[] {
-  console.log("[DishItem] customFields:", customFields);
   if (!Array.isArray(customFields)) return [];
   return customFields
     .flatMap((f) =>

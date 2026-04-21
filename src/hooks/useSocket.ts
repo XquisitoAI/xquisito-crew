@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
-import { useAuth } from "@clerk/clerk-react";
 import { io, Socket } from "socket.io-client";
 import type { DishStatus, Order } from "../types";
 import type { PrintJobData } from "./usePrinting";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const CREW_SECRET =
+  import.meta.env.VITE_CREW_SOCKET_SECRET || "xquisito-crew-secret";
+const BRANCH_KEY = "crew_branch_id";
 
 interface UseSocketProps {
   onOrderClosed: (orderId: string) => void;
@@ -19,86 +21,112 @@ export function useSocket({
   onRefetch,
   onPrintJob,
 }: UseSocketProps) {
-  const { getToken } = useAuth();
-  const socketRef = useRef<Socket | null>(null);
+  // Refs para los callbacks — siempre actualizados, sin reconectar el socket
+  const onOrderClosedRef = useRef(onOrderClosed);
+  const onDishStatusChangedRef = useRef(onDishStatusChanged);
+  const onRefetchRef = useRef(onRefetch);
+  const onPrintJobRef = useRef(onPrintJob);
 
   useEffect(() => {
-    let socket: Socket;
+    onOrderClosedRef.current = onOrderClosed;
+  });
+  useEffect(() => {
+    onDishStatusChangedRef.current = onDishStatusChanged;
+  });
+  useEffect(() => {
+    onRefetchRef.current = onRefetch;
+  });
+  useEffect(() => {
+    onPrintJobRef.current = onPrintJob;
+  });
 
-    const connect = async () => {
-      const token = await getToken();
-      if (!token) return;
+  const socketRef = useRef<Socket | null>(null);
 
-      socket = io(BASE_URL, {
-        auth: { token, clientType: "admin-portal" },
-        transports: ["websocket"],
-        reconnection: true,
-        reconnectionDelay: 2000,
-      });
+  // El socket se conecta UNA sola vez al montar el componente
+  useEffect(() => {
+    const branchId = localStorage.getItem(BRANCH_KEY);
+    console.log(`[CREW:SOCKET] Iniciando — branchId=${branchId}`);
+    if (!branchId) {
+      console.warn("[CREW:SOCKET] No branchId configurado, socket no conectado");
+      return;
+    }
 
-      socketRef.current = socket;
+    console.log(`[CREW:SOCKET] Conectando a ${BASE_URL}`);
+    const socket = io(BASE_URL, {
+      auth: { branchId, secret: CREW_SECRET, clientType: "crew" },
+      transports: ["websocket"],
+      reconnection: true,
+      reconnectionDelay: 2000,
+    });
 
-      socket.on("connect", () => {
-        console.log("[CREW] Socket conectado");
-        // El servidor auto-une al usuario a su sala en dashboardEvents.js
-      });
+    socketRef.current = socket;
 
-      socket.on("room:joined", () => {
-        console.log("[CREW] Sala del restaurante unida");
-      });
+    socket.on("connect", () => {
+      console.log(`[CREW:SOCKET] ✅ Conectado — id=${socket.id}`);
+    });
 
-      // Nueva orden → refetch para obtener datos completos del backend
-      socket.on("dashboard:new-transaction", (data: { notifyKitchen?: boolean }) => {
-        if (data?.notifyKitchen !== false) onRefetch();
-      });
+    socket.on("room:joined", (data: any) => {
+      console.log(`[CREW:SOCKET] 🏠 Sala unida — restaurant=${data?.restaurantId} branch=${data?.branchId}`);
+    });
 
-      // Orden cerrada desde otro lugar
-      socket.on(
-        "dashboard:order-update",
-        (data: { order: Order; action: string }) => {
-          if (data.action === "closed") {
-            onOrderClosed(data.order.id);
-          }
-        },
-      );
+    socket.on(
+      "dashboard:new-transaction",
+      (data: { notifyKitchen?: boolean }) => {
+        if (data?.notifyKitchen !== false) onRefetchRef.current();
+      },
+    );
 
-      // Dish status cambiado desde otro lugar (FlexBill/Tap)
-      socket.on(
-        "table:dish-status",
-        (data: { dishId: string; status: DishStatus }) => {
-          onDishStatusChanged(data.dishId, data.status);
-        },
-      );
+    socket.on(
+      "dashboard:order-update",
+      (data: { order: Order; action: string }) => {
+        if (data.action === "closed") {
+          onOrderClosedRef.current(data.order.id);
+        }
+      },
+    );
 
-      socket.on(
-        "tappay:dish-status-changed",
-        (data: { dishId: string; status: DishStatus }) => {
-          onDishStatusChanged(data.dishId, data.status);
-        },
-      );
+    socket.on(
+      "table:dish-status",
+      (data: { dishId: string; status: DishStatus }) => {
+        onDishStatusChangedRef.current(data.dishId, data.status);
+      },
+    );
 
-      // Dish status cambiado desde otro dispositivo Crew
-      socket.on(
-        "kitchen:dish-status-changed",
-        (data: { dishId: string; status: DishStatus }) => {
-          onDishStatusChanged(data.dishId, data.status);
-        },
-      );
+    socket.on(
+      "tappay:dish-status-changed",
+      (data: { dishId: string; status: DishStatus }) => {
+        onDishStatusChangedRef.current(data.dishId, data.status);
+      },
+    );
 
-      // Trabajo de impresión desde el backend
-      socket.on("kitchen:print_job", (data: PrintJobData) => {
-        onPrintJob?.(data);
-      });
+    socket.on(
+      "kitchen:dish-status-changed",
+      (data: { dishId: string; status: DishStatus }) => {
+        onDishStatusChangedRef.current(data.dishId, data.status);
+      },
+    );
 
-      socket.on("disconnect", (reason) => {
-        console.log("[CREW] Socket desconectado:", reason);
-      });
-    };
+    socket.on("kitchen:print_job", (data: PrintJobData) => {
+      console.log(`[CREW:SOCKET] 🖨️ kitchen:print_job recibido — branchId=${data.branchId} identifier=${data.orderInfo?.identifier} items=${data.items?.length}`);
+      onPrintJobRef.current?.(data);
+    });
 
-    connect();
+    socket.on("connect_error", (err) => {
+      console.error(`[CREW:SOCKET] ❌ Error de conexión: ${err.message}`);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log(`[CREW:SOCKET] 🔴 Desconectado — reason=${reason}`);
+    });
+
+    socket.on("reconnect", (attempt: number) => {
+      console.log(`[CREW:SOCKET] 🔄 Reconectado tras ${attempt} intento(s)`);
+    });
 
     return () => {
-      if (socket) socket.disconnect();
+      console.log("[CREW:SOCKET] 🧹 Cleanup — desconectando socket");
+      socket.disconnect();
+      socketRef.current = null;
     };
-  }, [getToken, onOrderClosed, onDishStatusChanged, onRefetch, onPrintJob]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }

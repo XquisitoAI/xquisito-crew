@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { useClerk, useAuth } from "@clerk/clerk-react";
 import { LogOut, PrinterIcon } from "lucide-react";
-import { useKitchenOrders } from "../hooks/useKitchenOrders";
-import { useSocket } from "../hooks/useSocket";
-import { usePrinting } from "../hooks/usePrinting";
 import OrderCarousel from "../components/OrderCarousel";
 import { deleteFcmToken } from "../services/api";
-import type { DishStatus } from "../types";
+import type { DishStatus, Order } from "../types";
 
 async function showWindow() {
   try {
@@ -20,31 +17,6 @@ async function syncHasOrders(hasOrders: boolean) {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_has_orders", { hasOrders });
   } catch {}
-}
-
-async function sendDesktopNotification(title: string, body: string) {
-  try {
-    const {
-      isPermissionGranted,
-      requestPermission,
-      sendNotification,
-    } = await import("@tauri-apps/plugin-notification");
-    let permission = await isPermissionGranted();
-    if (!permission) {
-      const result = await requestPermission();
-      permission = result === "granted";
-    }
-    if (!permission) return;
-    await sendNotification({ title, body });
-  } catch {
-    if ("Notification" in window) {
-      const p =
-        Notification.permission === "granted"
-          ? "granted"
-          : await Notification.requestPermission();
-      if (p === "granted") new Notification(title, { body });
-    }
-  }
 }
 
 async function registerFcmToken(authToken: string) {
@@ -61,9 +33,8 @@ async function registerFcmToken(authToken: string) {
         return;
       }
     } catch {
-      return; // No es Android
+      return;
     }
-    // Token aún no disponible, esperar antes de reintentar
     await new Promise((r) => setTimeout(r, DELAY_MS));
   }
 }
@@ -84,9 +55,28 @@ async function requestNotificationPermission() {
 
 interface Props {
   onOpenPrinters: () => void;
+  orders: Order[];
+  loading: boolean;
+  error: string | null;
+  fetchOrders: () => Promise<void>;
+  updateDish: (
+    orderId: string,
+    orderType: string,
+    dishId: string,
+    status: DishStatus,
+  ) => Promise<void>;
+  newOrderAlert: boolean;
 }
 
-export default function Kitchen({ onOpenPrinters }: Props) {
+export default function Kitchen({
+  onOpenPrinters,
+  orders,
+  loading,
+  error,
+  fetchOrders,
+  updateDish,
+  newOrderAlert,
+}: Props) {
   const { signOut } = useClerk();
   const { getToken } = useAuth();
 
@@ -97,7 +87,9 @@ export default function Kitchen({ onOpenPrinters }: Props) {
         try {
           const { invoke } = await import("@tauri-apps/api/core");
           return await invoke<string | null>("get_fcm_token");
-        } catch { return null; }
+        } catch {
+          return null;
+        }
       })();
       if (token && fcmToken) await deleteFcmToken(token, fcmToken);
     } catch {}
@@ -115,37 +107,27 @@ export default function Kitchen({ onOpenPrinters }: Props) {
     let unlisten: (() => void) | undefined;
     import("@tauri-apps/plugin-notification")
       .then(({ onAction }) => onAction(() => showWindow()))
-      .then((listener) => { unlisten = () => listener.unregister(); })
+      .then((listener) => {
+        unlisten = () => listener.unregister();
+      })
       .catch(() => {});
-    return () => { unlisten?.(); };
+    return () => {
+      unlisten?.();
+    };
   }, []);
-
-  const { printJob } = usePrinting();
-
-  const [newOrderAlert, setNewOrderAlert] = useState(false);
-  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const {
-    orders,
-    loading,
-    error,
-    fetchOrders,
-    updateDish,
-    removeOrder,
-    updateDishFromSocket,
-  } = useKitchenOrders();
 
   useEffect(() => {
     syncHasOrders(orders.length > 0);
   }, [orders.length]);
 
-  // Refetch al volver al frente (Android: visibilitychange, Windows: foco de ventana Tauri)
+  // Refetch al volver al frente
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === "visible") fetchOrders();
     };
     document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibility);
   }, [fetchOrders]);
 
   useEffect(() => {
@@ -156,37 +138,14 @@ export default function Kitchen({ onOpenPrinters }: Props) {
           if (focused) fetchOrders();
         }),
       )
-      .then((fn) => { unlisten = fn; })
+      .then((fn) => {
+        unlisten = fn;
+      })
       .catch(() => {});
-    return () => { unlisten?.(); };
+    return () => {
+      unlisten?.();
+    };
   }, [fetchOrders]);
-
-  const handleOrderClosed = useCallback(
-    (orderId: string) => removeOrder(orderId),
-    [removeOrder],
-  );
-  const handleDishStatusChanged = useCallback(
-    (dishId: string, status: DishStatus) =>
-      updateDishFromSocket(dishId, status),
-    [updateDishFromSocket],
-  );
-  const handleRefetch = useCallback(() => {
-    fetchOrders();
-    // Banner in-app: siempre visible independientemente del foco de la ventana
-    setNewOrderAlert(true);
-    if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
-    alertTimerRef.current = setTimeout(() => setNewOrderAlert(false), 3500);
-    // Notificación del OS + traer ventana (cuando está en segundo plano)
-    sendDesktopNotification("Xquisito Crew", "Nueva orden recibida");
-    if (document.visibilityState !== "visible") showWindow();
-  }, [fetchOrders]);
-
-  useSocket({
-    onOrderClosed: handleOrderClosed,
-    onDishStatusChanged: handleDishStatusChanged,
-    onRefetch: handleRefetch,
-    onPrintJob: printJob,
-  });
 
   return (
     <div
@@ -197,8 +156,10 @@ export default function Kitchen({ onOpenPrinters }: Props) {
     >
       {/* Banner nueva orden */}
       {newOrderAlert && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-emerald-500 text-white px-5 py-2.5 rounded-full font-semibold text-sm shadow-lg pointer-events-none"
-          style={{ animation: "fadeSlideDown 0.25s ease" }}>
+        <div
+          className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-emerald-500 text-white px-5 py-2.5 rounded-full font-semibold text-sm shadow-lg pointer-events-none"
+          style={{ animation: "fadeSlideDown 0.25s ease" }}
+        >
           <span className="w-2 h-2 rounded-full bg-white animate-ping inline-block" />
           Nueva orden recibida
         </div>
@@ -225,13 +186,6 @@ export default function Kitchen({ onOpenPrinters }: Props) {
 
       {/* Logo central */}
       <div className="flex flex-col items-center pb-6 gap-2">
-        {/*<div className="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center mb-1">
-          <img
-            src="/logo-short-green.webp"
-            alt="Xquisito"
-            className="w-14 h-14"
-          />
-        </div>*/}
         <h1 className="text-white font-semibold text-xl">Xquisito Crew</h1>
         <p className="text-white/50 text-sm">
           {orders.length} orden(es) pendiente(s)

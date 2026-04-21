@@ -1,10 +1,63 @@
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useAuth, useSignIn } from "@clerk/clerk-react";
 import { Mail, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 import Kitchen from "./pages/Kitchen";
 import Printers from "./pages/Printers";
+import { useSocket } from "./hooks/useSocket";
+import { usePrinting } from "./hooks/usePrinting";
+import { useKitchenOrders } from "./hooks/useKitchenOrders";
+import type { DishStatus } from "./types";
 
 type Page = "kitchen" | "printers";
+
+async function showWindowIfNeeded() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    const isVisible = await win.isVisible();
+    const isMinimized = await win.isMinimized();
+    if (!isVisible || isMinimized) {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("show_main_window");
+    }
+  } catch {}
+}
+
+// Inicializar permisos de notificación al arrancar (no en cada orden)
+async function initNotifications() {
+  try {
+    const { isPermissionGranted, requestPermission } =
+      await import("@tauri-apps/plugin-notification");
+    const granted = await isPermissionGranted();
+    if (!granted) await requestPermission();
+    console.log("[CREW:NOTIF] Permisos inicializados");
+  } catch {
+    if ("Notification" in window && Notification.permission === "default") {
+      await Notification.requestPermission();
+    }
+  }
+}
+
+async function sendDesktopNotification(title: string, body: string) {
+  console.log(`[CREW:NOTIF] Enviando notificación: ${title} — ${body}`);
+  try {
+    // Usar comando Rust con PowerShell toast — más confiable en .exe portable Windows
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("notify_new_order", { title, body });
+    console.log("[CREW:NOTIF] ✅ Notificación enviada via Rust");
+  } catch (e) {
+    console.warn("[CREW:NOTIF] Rust falló, intentando plugin Tauri:", e);
+    try {
+      const { sendNotification } = await import("@tauri-apps/plugin-notification");
+      await sendNotification({ title, body });
+    } catch (e2) {
+      console.warn("[CREW:NOTIF] Plugin falló, intentando Web API:", e2);
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+    }
+  }
+}
 
 export default function App() {
   const { isLoaded, isSignedIn } = useAuth();
@@ -16,6 +69,67 @@ export default function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Estado de nueva orden (banner) — vive en App para no perderse al navegar
+  const [newOrderAlert, setNewOrderAlert] = useState(false);
+  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Inicializar permisos de notificación una sola vez al arrancar
+  useEffect(() => {
+    initNotifications();
+  }, []);
+
+  // F12 abre DevTools
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "F12") {
+        import("@tauri-apps/api/core")
+          .then(({ invoke }) => invoke("open_devtools"))
+          .catch(() => {});
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
+
+  // Hooks que deben vivir toda la sesión (independiente de la página activa)
+  const { printJob } = usePrinting();
+
+  const {
+    orders,
+    loading: ordersLoading,
+    error: ordersError,
+    fetchOrders,
+    updateDish,
+    removeOrder,
+    updateDishFromSocket,
+  } = useKitchenOrders();
+
+  const handleOrderClosed = useCallback(
+    (orderId: string) => removeOrder(orderId),
+    [removeOrder],
+  );
+  const handleDishStatusChanged = useCallback(
+    (dishId: string, status: DishStatus) =>
+      updateDishFromSocket(dishId, status),
+    [updateDishFromSocket],
+  );
+  const handleRefetch = useCallback(() => {
+    console.log("[CREW:ORDER] 🔔 Nueva orden recibida — ejecutando refetch + notificación");
+    fetchOrders();
+    setNewOrderAlert(true);
+    if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+    alertTimerRef.current = setTimeout(() => setNewOrderAlert(false), 3500);
+    sendDesktopNotification("Xquisito Crew", "Nueva orden recibida");
+    showWindowIfNeeded();
+  }, [fetchOrders]);
+
+  useSocket({
+    onOrderClosed: handleOrderClosed,
+    onDishStatusChanged: handleDishStatusChanged,
+    onRefetch: handleRefetch,
+    onPrintJob: printJob,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +179,6 @@ export default function App() {
         }}
       >
         <div className="w-full max-w-sm flex flex-col items-center">
-          {/* Logo */}
           <div className="mb-8 flex flex-col items-center gap-3">
             <img
               src="/logo-short-green.webp"
@@ -78,7 +191,6 @@ export default function App() {
             </p>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="w-full space-y-3">
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40 pointer-events-none" />
@@ -140,5 +252,15 @@ export default function App() {
     return <Printers onBack={() => setPage("kitchen")} />;
   }
 
-  return <Kitchen onOpenPrinters={() => setPage("printers")} />;
+  return (
+    <Kitchen
+      onOpenPrinters={() => setPage("printers")}
+      orders={orders}
+      loading={ordersLoading}
+      error={ordersError}
+      fetchOrders={fetchOrders}
+      updateDish={updateDish}
+      newOrderAlert={newOrderAlert}
+    />
+  );
 }

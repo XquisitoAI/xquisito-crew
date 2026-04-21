@@ -91,8 +91,10 @@ export interface PrinterRecord {
   usb_device_name: string | null;
 }
 
-export async function getPrinters(token: string, branchId: string): Promise<PrinterRecord[]> {
-  const data = await authFetch(`/api/pos/branch/${branchId}/printers`, token);
+export async function getPrinters(branchId: string): Promise<PrinterRecord[]> {
+  const res = await fetch(`${BASE_URL}/api/pos/branch/${branchId}/printers`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
   return data.printers ?? [];
 }
 

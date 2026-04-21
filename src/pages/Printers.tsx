@@ -130,7 +130,7 @@ export default function Printers({ onBack }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const list = await getPrinters(token, branchId);
+        const list = await getPrinters(branchId);
         setPrinters(list);
       } catch (e: any) {
         setError(e?.message || "Error al cargar impresoras");
