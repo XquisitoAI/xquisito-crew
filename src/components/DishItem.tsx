@@ -1,4 +1,21 @@
-import type { Dish, DishStatus } from "../types";
+import type { CustomField, Dish, DishStatus } from "../types";
+
+function getOptions(customFields: CustomField[] | null | undefined): string[] {
+  console.log("[DishItem] customFields:", customFields);
+  if (!Array.isArray(customFields)) return [];
+  return customFields
+    .flatMap((f) =>
+      (f.selectedOptions ?? []).map((o) => {
+        const qty = o.quantity ?? 1;
+        const val =
+          f.fieldType === "dropdown-quantity" && qty > 1
+            ? `x${qty} ${o.optionName}`
+            : o.optionName;
+        return `${f.fieldName}: ${val}`;
+      }),
+    )
+    .filter(Boolean);
+}
 
 const STATUS_LABELS: Record<DishStatus, string> = {
   preparing: "Preparando",
@@ -47,13 +64,26 @@ export default function DishItem({ dish, onStatusChange }: DishItemProps) {
             </div>
           )}
           <div className="min-w-0">
-            <p className="font-semibold text-white truncate">{dish.item}</p>
+            <p className="font-semibold text-white truncate">
+              {dish.quantity} {dish.item}
+            </p>
             <p className="text-sm text-white/50">
-              x{dish.quantity}
               {dish.orderedBy && (
                 <span className="ml-1 text-white/50">· {dish.orderedBy}</span>
               )}
             </p>
+            {(() => {
+              const opts = getOptions(dish.customFields);
+              return opts.length > 0 ? (
+                <div className="mt-0.5">
+                  {opts.map((opt, i) => (
+                    <p key={i} className="text-xs text-white/50">
+                      {opt}
+                    </p>
+                  ))}
+                </div>
+              ) : null;
+            })()}
           </div>
         </div>
         <span
