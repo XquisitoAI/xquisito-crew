@@ -63,6 +63,9 @@ export default function App() {
   const { isLoaded, isSignedIn } = useAuth();
   const { signIn, setActive } = useSignIn();
   const [page, setPage] = useState<Page>("kitchen");
+  const [branchId, setBranchId] = useState<string | null>(
+    () => localStorage.getItem("crew_branch_id"),
+  );
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -125,6 +128,7 @@ export default function App() {
   }, [fetchOrders]);
 
   useSocket({
+    branchId,
     onOrderClosed: handleOrderClosed,
     onDishStatusChanged: handleDishStatusChanged,
     onRefetch: handleRefetch,
@@ -249,7 +253,14 @@ export default function App() {
   }
 
   if (page === "printers") {
-    return <Printers onBack={() => setPage("kitchen")} />;
+    return (
+      <Printers
+        onBack={() => {
+          setBranchId(localStorage.getItem("crew_branch_id"));
+          setPage("kitchen");
+        }}
+      />
+    );
   }
 
   return (

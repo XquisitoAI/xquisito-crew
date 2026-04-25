@@ -71,6 +71,11 @@ export default function OrderCard({
         <p className="text-sm text-white/50 mt-0.5">
           {delivered}/{total} entregados
         </p>
+        {order.orderNotes && (
+          <p className="text-sm text-white/80 mt-1.5">
+            Comentarios: {order.orderNotes}
+          </p>
+        )}
       </div>
 
       {/* Dishes */}

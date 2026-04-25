@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { useClerk, useAuth } from "@clerk/clerk-react";
-import { LogOut, PrinterIcon } from "lucide-react";
+import { LogOut, PrinterIcon, RefreshCw } from "lucide-react";
 import OrderCarousel from "../components/OrderCarousel";
 import { deleteFcmToken } from "../services/api";
 import type { DishStatus, Order } from "../types";
@@ -58,7 +58,7 @@ interface Props {
   orders: Order[];
   loading: boolean;
   error: string | null;
-  fetchOrders: () => Promise<void>;
+  fetchOrders: (showSpinner?: boolean) => Promise<void>;
   updateDish: (
     orderId: string,
     orderType: string,
@@ -170,6 +170,14 @@ export default function Kitchen({
         <img src="/logo-short-green.webp" className="w-8 h-8" alt="Xquisito" />
         <div className="flex items-center gap-1">
           <button
+            onClick={() => fetchOrders(true)}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors text-sm disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            Actualizar
+          </button>
+          <button
             onClick={onOpenPrinters}
             className="p-2 rounded-lg text-white/60 hover:text-white hover:bg-white/10 transition-colors"
           >
@@ -209,7 +217,7 @@ export default function Kitchen({
             <p className="font-medium text-white">Error al cargar órdenes</p>
             <p className="text-sm">{error}</p>
             <button
-              onClick={fetchOrders}
+              onClick={() => fetchOrders(true)}
               className="px-4 py-2 bg-white/20 text-white rounded-full text-sm font-medium hover:bg-white/30"
             >
               Reintentar

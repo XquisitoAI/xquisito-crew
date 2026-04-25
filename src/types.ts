@@ -24,6 +24,7 @@ export interface Dish {
   images: string[];
   orderedBy?: string | null;
   customFields?: CustomField[] | null;
+  specialInstructions?: string | null;
 }
 
 export interface Order {
@@ -33,5 +34,6 @@ export interface Order {
   customerName?: string | null;
   createdAt: string;
   folio?: string | number | null;
+  orderNotes?: string | null;
   dishes: Dish[];
 }

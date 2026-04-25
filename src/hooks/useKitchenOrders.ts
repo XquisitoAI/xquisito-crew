@@ -9,7 +9,8 @@ export function useKitchenOrders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
     try {
       const token = await getToken();
       if (!token) return;

@@ -6,9 +6,10 @@ import type { PrintJobData } from "./usePrinting";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const CREW_SECRET =
   import.meta.env.VITE_CREW_SOCKET_SECRET || "xquisito-crew-secret";
-const BRANCH_KEY = "crew_branch_id";
+//const BRANCH_KEY = "crew_branch_id";
 
 interface UseSocketProps {
+  branchId: string | null;
   onOrderClosed: (orderId: string) => void;
   onDishStatusChanged: (dishId: string, status: DishStatus) => void;
   onRefetch: () => void;
@@ -16,6 +17,7 @@ interface UseSocketProps {
 }
 
 export function useSocket({
+  branchId,
   onOrderClosed,
   onDishStatusChanged,
   onRefetch,
@@ -42,12 +44,13 @@ export function useSocket({
 
   const socketRef = useRef<Socket | null>(null);
 
-  // El socket se conecta UNA sola vez al montar el componente
+  // El socket se conecta/reconecta cuando cambia branchId
   useEffect(() => {
-    const branchId = localStorage.getItem(BRANCH_KEY);
     console.log(`[CREW:SOCKET] Iniciando — branchId=${branchId}`);
     if (!branchId) {
-      console.warn("[CREW:SOCKET] No branchId configurado, socket no conectado");
+      console.warn(
+        "[CREW:SOCKET] No branchId configurado, socket no conectado",
+      );
       return;
     }
 
@@ -66,7 +69,9 @@ export function useSocket({
     });
 
     socket.on("room:joined", (data: any) => {
-      console.log(`[CREW:SOCKET] 🏠 Sala unida — restaurant=${data?.restaurantId} branch=${data?.branchId}`);
+      console.log(
+        `[CREW:SOCKET] 🏠 Sala unida — restaurant=${data?.restaurantId} branch=${data?.branchId}`,
+      );
     });
 
     socket.on(
@@ -107,7 +112,9 @@ export function useSocket({
     );
 
     socket.on("kitchen:print_job", (data: PrintJobData) => {
-      console.log(`[CREW:SOCKET] 🖨️ kitchen:print_job recibido — branchId=${data.branchId} identifier=${data.orderInfo?.identifier} items=${data.items?.length}`);
+      console.log(
+        `[CREW:SOCKET] 🖨️ kitchen:print_job recibido — branchId=${data.branchId} identifier=${data.orderInfo?.identifier} items=${data.items?.length}`,
+      );
       onPrintJobRef.current?.(data);
     });
 
@@ -128,5 +135,5 @@ export function useSocket({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [branchId]); // reconecta si cambia la sucursal
 }

@@ -14,6 +14,7 @@ export interface PrintJobData {
     custom_fields?:
       | { fieldName: string; selectedOptions: { optionName: string }[] }[]
       | null;
+    special_instructions?: string | null;
   }[];
   orderInfo: {
     identifier: string;
@@ -55,6 +56,7 @@ type TicketItem = {
   custom_fields?:
     | { fieldName: string; selectedOptions: { optionName: string }[] }[]
     | null;
+  special_instructions?: string | null;
 };
 
 function buildTicket(
@@ -104,6 +106,9 @@ function buildTicket(
         buf.push(...encodeText(`  ${field.fieldName}: ${opts}\n`));
       }
     }
+    if (item.special_instructions) {
+      buf.push(...encodeText(`  Nota: ${item.special_instructions}\n`));
+    }
   }
   buf.push(...encodeText("========================\n"));
   buf.push(0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x00); // Feed + cut
@@ -120,28 +125,34 @@ export function usePrinting() {
     if (!branchId) return;
     branchIdRef.current = branchId;
 
-    getPrinters(branchId).then((list) => {
-      printersRef.current = list.filter(
-        (p) => p.is_active !== false && p.role,
-      );
-      console.log(
-        `[PRINT] ${printersRef.current.length} impresora(s) cargadas para branch ${branchId}`,
-      );
-    }).catch((e) => {
-      console.warn("[PRINT] No se pudieron cargar impresoras:", e);
-    });
+    getPrinters(branchId)
+      .then((list) => {
+        printersRef.current = list.filter(
+          (p) => p.is_active !== false && p.role,
+        );
+        console.log(
+          `[PRINT] ${printersRef.current.length} impresora(s) cargadas para branch ${branchId}`,
+        );
+      })
+      .catch((e) => {
+        console.warn("[PRINT] No se pudieron cargar impresoras:", e);
+      });
   }, []);
 
   const printJob = useCallback(async (data: PrintJobData) => {
     const isPrinter = localStorage.getItem(IS_PRINTER_KEY);
-    console.log(`[PRINT] printJob llamado — isPrinter=${isPrinter} dataBranch=${data.branchId} myBranch=${branchIdRef.current}`);
+    console.log(
+      `[PRINT] printJob llamado — isPrinter=${isPrinter} dataBranch=${data.branchId} myBranch=${branchIdRef.current}`,
+    );
 
     if (isPrinter !== "true") {
       console.log("[PRINT] Omitido — este dispositivo no es impresora");
       return;
     }
     if (data.branchId !== branchIdRef.current) {
-      console.log(`[PRINT] Omitido — branchId no coincide (data=${data.branchId} vs local=${branchIdRef.current})`);
+      console.log(
+        `[PRINT] Omitido — branchId no coincide (data=${data.branchId} vs local=${branchIdRef.current})`,
+      );
       return;
     }
 
@@ -154,13 +165,16 @@ export function usePrinting() {
 
       const printerItems = data.items
         .filter((item) => printsThisItem(printer.role!, item.clasificacion))
-        .map(({ name, quantity, custom_fields }) => ({
+        .map(({ name, quantity, custom_fields, special_instructions }) => ({
           name,
           quantity,
           custom_fields,
+          special_instructions,
         }));
 
-      console.log(`[PRINT] Impresora role=${printer.role} type=${printer.connection_type} — items a imprimir: ${printerItems.length}`);
+      console.log(
+        `[PRINT] Impresora role=${printer.role} type=${printer.connection_type} — items a imprimir: ${printerItems.length}`,
+      );
       if (printerItems.length === 0) continue;
 
       const ticket = buildTicket(
@@ -180,7 +194,9 @@ export function usePrinting() {
           console.error(`[PRINT] ❌ Error USB ${printer.usb_device_name}:`, e),
         );
       } else if (printer.ip && printer.port) {
-        console.log(`[PRINT] 🖨️ Enviando a WiFi: ${printer.ip}:${printer.port}`);
+        console.log(
+          `[PRINT] 🖨️ Enviando a WiFi: ${printer.ip}:${printer.port}`,
+        );
         invoke("print_raw", {
           ip: printer.ip,
           port: printer.port,

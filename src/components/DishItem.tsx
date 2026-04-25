@@ -83,6 +83,11 @@ export default function DishItem({ dish, onStatusChange }: DishItemProps) {
                 </div>
               ) : null;
             })()}
+            {dish.specialInstructions && (
+              <p className="text-xs text-white/50 mt-0.5">
+                Nota: {dish.specialInstructions}
+              </p>
+            )}
           </div>
         </div>
         <span
