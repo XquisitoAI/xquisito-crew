@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import type { DishStatus, Order } from "../types";
 import type { PrintJobData } from "./usePrinting";
@@ -6,57 +6,59 @@ import type { PrintJobData } from "./usePrinting";
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const CREW_SECRET =
   import.meta.env.VITE_CREW_SOCKET_SECRET || "xquisito-crew-secret";
-//const BRANCH_KEY = "crew_branch_id";
+
+export interface CrewDevice {
+  deviceId: string;
+  socketId: string | null;
+  connectedAt: string | null;
+  online: boolean;
+}
 
 interface UseSocketProps {
   branchId: string | null;
+  deviceId: string;
   onOrderClosed: (orderId: string) => void;
   onDishStatusChanged: (dishId: string, status: DishStatus) => void;
   onRefetch: () => void;
   onPrintJob?: (data: PrintJobData) => void;
+  onDevicesUpdated?: (devices: CrewDevice[], masterDeviceId: string | null) => void;
 }
 
 export function useSocket({
   branchId,
+  deviceId,
   onOrderClosed,
   onDishStatusChanged,
   onRefetch,
   onPrintJob,
+  onDevicesUpdated,
 }: UseSocketProps) {
   // Refs para los callbacks — siempre actualizados, sin reconectar el socket
   const onOrderClosedRef = useRef(onOrderClosed);
   const onDishStatusChangedRef = useRef(onDishStatusChanged);
   const onRefetchRef = useRef(onRefetch);
   const onPrintJobRef = useRef(onPrintJob);
+  const onDevicesUpdatedRef = useRef(onDevicesUpdated);
 
-  useEffect(() => {
-    onOrderClosedRef.current = onOrderClosed;
-  });
-  useEffect(() => {
-    onDishStatusChangedRef.current = onDishStatusChanged;
-  });
-  useEffect(() => {
-    onRefetchRef.current = onRefetch;
-  });
-  useEffect(() => {
-    onPrintJobRef.current = onPrintJob;
-  });
+  useEffect(() => { onOrderClosedRef.current = onOrderClosed; });
+  useEffect(() => { onDishStatusChangedRef.current = onDishStatusChanged; });
+  useEffect(() => { onRefetchRef.current = onRefetch; });
+  useEffect(() => { onPrintJobRef.current = onPrintJob; });
+  useEffect(() => { onDevicesUpdatedRef.current = onDevicesUpdated; });
 
   const socketRef = useRef<Socket | null>(null);
 
   // El socket se conecta/reconecta cuando cambia branchId
   useEffect(() => {
-    console.log(`[CREW:SOCKET] Iniciando — branchId=${branchId}`);
+    console.log(`[CREW:SOCKET] Iniciando — branchId=${branchId} deviceId=${deviceId}`);
     if (!branchId) {
-      console.warn(
-        "[CREW:SOCKET] No branchId configurado, socket no conectado",
-      );
+      console.warn("[CREW:SOCKET] No branchId configurado, socket no conectado");
       return;
     }
 
     console.log(`[CREW:SOCKET] Conectando a ${BASE_URL}`);
     const socket = io(BASE_URL, {
-      auth: { branchId, secret: CREW_SECRET, clientType: "crew" },
+      auth: { branchId, secret: CREW_SECRET, clientType: "crew", deviceId },
       transports: ["websocket"],
       reconnection: true,
       reconnectionDelay: 2000,
@@ -70,9 +72,20 @@ export function useSocket({
 
     socket.on("room:joined", (data: any) => {
       console.log(
-        `[CREW:SOCKET] 🏠 Sala unida — restaurant=${data?.restaurantId} branch=${data?.branchId}`,
+        `[CREW:SOCKET] 🏠 Sala unida — restaurant=${data?.restaurantId} branch=${data?.branchId} master=${data?.masterDeviceId}`,
       );
+      if (data?.devices !== undefined) {
+        onDevicesUpdatedRef.current?.(data.devices, data.masterDeviceId ?? null);
+      }
     });
+
+    socket.on(
+      "crew:devices-updated",
+      ({ devices, masterDeviceId }: { devices: CrewDevice[]; masterDeviceId: string | null }) => {
+        console.log(`[CREW:SOCKET] 👥 Dispositivos actualizados — count=${devices.length} master=${masterDeviceId}`);
+        onDevicesUpdatedRef.current?.(devices, masterDeviceId);
+      },
+    );
 
     socket.on(
       "dashboard:new-transaction",
@@ -135,5 +148,11 @@ export function useSocket({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [branchId]); // reconecta si cambia la sucursal
+  }, [branchId, deviceId]); // reconecta si cambia la sucursal
+
+  const setMaster = useCallback((targetDeviceId: string) => {
+    socketRef.current?.emit("crew:set-master", { deviceId: targetDeviceId });
+  }, []);
+
+  return { setMaster };
 }

@@ -1,8 +1,9 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useClerk, useAuth } from "@clerk/clerk-react";
-import { LogOut, PrinterIcon, RefreshCw } from "lucide-react";
+import { LogOut, PrinterIcon, RefreshCw, ChevronDown, Check } from "lucide-react";
 import OrderCarousel from "../components/OrderCarousel";
 import { deleteFcmToken } from "../services/api";
+import type { Branch } from "../services/api";
 import type { DishStatus, Order } from "../types";
 
 async function showWindow() {
@@ -66,6 +67,10 @@ interface Props {
     status: DishStatus,
   ) => Promise<void>;
   newOrderAlert: boolean;
+  branches: Branch[];
+  branchesLoading: boolean;
+  branchId: string | null;
+  onBranchChange: (id: string) => void;
 }
 
 export default function Kitchen({
@@ -76,7 +81,12 @@ export default function Kitchen({
   fetchOrders,
   updateDish,
   newOrderAlert,
+  branches,
+  branchesLoading,
+  branchId,
+  onBranchChange,
 }: Props) {
+  const [branchOpen, setBranchOpen] = useState(false);
   const { signOut } = useClerk();
   const { getToken } = useAuth();
 
@@ -193,8 +203,36 @@ export default function Kitchen({
       </header>
 
       {/* Logo central */}
-      <div className="flex flex-col items-center pb-6 gap-2">
+      <div className="flex flex-col items-center pb-6 gap-1">
         <h1 className="text-white font-semibold text-xl">Xquisito Crew</h1>
+        {!branchesLoading && branches.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setBranchOpen((v) => !v)}
+              className="flex items-center gap-2 bg-white/10 hover:bg-white/15 text-white/80 text-sm rounded-full px-4 py-1.5 border border-white/10 transition-colors"
+            >
+              <span>{branches.find((b) => b.id === branchId)?.name ?? "Seleccionar sucursal"}</span>
+              {branches.length > 1 && (
+                <ChevronDown className={`w-3.5 h-3.5 text-white/40 transition-transform ${branchOpen ? "rotate-180" : ""}`} />
+              )}
+            </button>
+            {branchOpen && branches.length > 1 && (
+              <ul className="absolute z-50 top-full mt-1 left-1/2 -translate-x-1/2 min-w-full w-max bg-[#0a3238] border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+                {branches.map((b) => (
+                  <li key={b.id}>
+                    <button
+                      onClick={() => { onBranchChange(b.id); setBranchOpen(false); }}
+                      className="w-full flex items-center justify-between gap-4 px-4 py-2.5 text-sm text-white/80 hover:bg-white/10 transition-colors"
+                    >
+                      <span>{b.name}</span>
+                      {b.id === branchId && <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <p className="text-white/50 text-sm">
           {orders.length} orden(es) pendiente(s)
         </p>
@@ -208,7 +246,18 @@ export default function Kitchen({
           backdropFilter: "blur(10px)",
         }}
       >
-        {loading ? (
+        {branchesLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-white/20 border-t-white/80 rounded-full animate-spin" />
+          </div>
+        ) : !branchId ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-white/70">
+            <p className="font-medium text-white">Selecciona una sucursal</p>
+            <p className="text-sm text-center">
+              Usa el selector de arriba para elegir la sucursal que deseas monitorear.
+            </p>
+          </div>
+        ) : loading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="w-8 h-8 border-4 border-white/20 border-t-white/80 rounded-full animate-spin" />
           </div>

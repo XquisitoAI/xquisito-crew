@@ -19,8 +19,9 @@ async function authFetch(
   return res.json();
 }
 
-export async function getActiveOrders(token: string): Promise<Order[]> {
-  const data = await authFetch("/api/kitchen/orders", token);
+export async function getActiveOrders(token: string, branchId?: string | null): Promise<Order[]> {
+  const url = branchId ? `/api/kitchen/orders?branchId=${branchId}` : "/api/kitchen/orders";
+  const data = await authFetch(url, token);
   return data.orders ?? [];
 }
 

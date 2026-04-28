@@ -3,10 +3,10 @@ import { useAuth } from "@clerk/clerk-react";
 import type { Order, DishStatus } from "../types";
 import { getActiveOrders, updateDishStatus } from "../services/api";
 
-export function useKitchenOrders() {
+export function useKitchenOrders(branchId: string | null) {
   const { getToken } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async (showSpinner = false) => {
@@ -14,7 +14,7 @@ export function useKitchenOrders() {
     try {
       const token = await getToken();
       if (!token) return;
-      const data = await getActiveOrders(token);
+      const data = await getActiveOrders(token, branchId);
       setOrders(data);
       setError(null);
     } catch (e: any) {
@@ -22,7 +22,14 @@ export function useKitchenOrders() {
     } finally {
       setLoading(false);
     }
-  }, [getToken]);
+  }, [getToken, branchId]);
+
+  // Reset state when branch changes so the loader shows immediately
+  useEffect(() => {
+    if (!branchId) { setLoading(false); return; }
+    setLoading(true);
+    setOrders([]);
+  }, [branchId]);
 
   useEffect(() => {
     fetchOrders();

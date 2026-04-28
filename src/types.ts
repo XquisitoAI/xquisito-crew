@@ -27,6 +27,16 @@ export interface Dish {
   specialInstructions?: string | null;
 }
 
+export interface PaymentTransaction {
+  id: string;
+  baseAmount: number;
+  tipAmount: number;
+  totalCharged: number;
+  cardType: string;
+  createdAt: string;
+  guestName?: string | null;
+}
+
 export interface Order {
   id: string;
   orderType: OrderType;
@@ -35,5 +45,9 @@ export interface Order {
   createdAt: string;
   folio?: string | number | null;
   orderNotes?: string | null;
+  totalAmount?: number | null;
+  paidAmount?: number | null;
+  remainingAmount?: number | null;
+  payments?: PaymentTransaction[];
   dishes: Dish[];
 }

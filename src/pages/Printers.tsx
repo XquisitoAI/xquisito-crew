@@ -9,8 +9,9 @@ import {
   Check,
   X,
   ChevronDown,
-  Radio,
   Cable,
+  Crown,
+  Monitor,
 } from "lucide-react";
 import { usePrinters } from "../hooks/usePrinters";
 import {
@@ -21,6 +22,7 @@ import {
   type Branch,
   type PrinterRecord,
 } from "../services/api";
+import type { CrewDevice } from "../hooks/useSocket";
 
 const ROLES = [
   {
@@ -59,6 +61,11 @@ function RoleBadge({ role }: { role: string }) {
 
 interface Props {
   onBack: () => void;
+  deviceId: string;
+  connectedDevices: CrewDevice[];
+  masterDeviceId: string | null;
+  setMaster: (deviceId: string) => void;
+  onBranchChange: (id: string) => void;
 }
 
 interface EditState {
@@ -66,7 +73,7 @@ interface EditState {
   role: string;
 }
 
-export default function Printers({ onBack }: Props) {
+export default function Printers({ onBack, deviceId, connectedDevices, masterDeviceId, setMaster, onBranchChange }: Props) {
   const { getToken } = useAuth();
   const {
     scanning,
@@ -81,6 +88,7 @@ export default function Printers({ onBack }: Props) {
   } = usePrinters();
 
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string>("");
   const [branchOpen, setBranchOpen] = useState(false);
   const [printers, setPrinters] = useState<PrinterRecord[]>([]);
@@ -89,9 +97,6 @@ export default function Printers({ onBack }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState>({ name: "", role: "" });
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [isMainPrinter, setIsMainPrinter] = useState(
-    () => localStorage.getItem("crew_is_printer") === "true",
-  );
 
   // Estado para edición de impresoras USB (pending — no tienen ID aún)
   const [editingUsbDevice, setEditingUsbDevice] = useState<string | null>(null);
@@ -99,27 +104,33 @@ export default function Printers({ onBack }: Props) {
   const [savingUsbDevice, setSavingUsbDevice] = useState<string | null>(null);
   const [usbError, setUsbError] = useState<string | null>(null);
 
-  const toggleMainPrinter = () => {
-    const next = !isMainPrinter;
-    setIsMainPrinter(next);
-    localStorage.setItem("crew_is_printer", String(next));
-  };
-
   // Load branches on mount
   useEffect(() => {
-    getToken().then(async (token) => {
-      if (!token) return;
+    setBranchesLoading(true);
+    (async () => {
       try {
+        const token = await getToken();
+        if (!token) return;
         const list = await getBranches(token);
         setBranches(list);
-        if (list.length === 1) {
+        const saved = localStorage.getItem("crew_branch_id");
+        const match = list.find((b) => b.id === saved);
+        if (match) {
+          setLoading(true);
+          setSelectedBranch(match.id);
+          onBranchChange(match.id);
+        } else if (list.length === 1) {
+          setLoading(true);
           setSelectedBranch(list[0].id);
           localStorage.setItem("crew_branch_id", list[0].id);
+          onBranchChange(list[0].id);
         }
       } catch (e: any) {
         setError(e?.message || "Error al cargar sucursales");
+      } finally {
+        setBranchesLoading(false);
       }
-    });
+    })();
   }, [getToken]);
 
   // Load printers when branch changes
@@ -327,6 +338,7 @@ export default function Printers({ onBack }: Props) {
                     onClick={() => {
                       setSelectedBranch(b.id);
                       localStorage.setItem("crew_branch_id", b.id);
+                      onBranchChange(b.id);
                       setBranchOpen(false);
                     }}
                     className={`w-full text-left px-4 py-3 text-sm transition-colors ${
@@ -343,33 +355,73 @@ export default function Printers({ onBack }: Props) {
           )}
         </div>
 
-        {/* Toggle impresora principal */}
-        <button
-          onClick={toggleMainPrinter}
-          className={`flex items-center justify-between px-4 py-3 rounded-2xl ring-1 transition-colors ${
-            isMainPrinter ? "bg-emerald-500/15 ring-emerald-500/30" : "bg-white/5 ring-white/10"
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <Radio className={`w-4 h-4 ${isMainPrinter ? "text-emerald-400" : "text-white/30"}`} />
-            <div className="text-left">
-              <p className={`text-sm font-medium ${isMainPrinter ? "text-emerald-300" : "text-white/50"}`}>
-                {isMainPrinter ? "Impresora principal activa" : "Este dispositivo no imprime"}
-              </p>
-              <p className="text-xs text-white/30">
-                {isMainPrinter
-                  ? "Las órdenes nuevas se imprimen aquí"
-                  : "Toca para activar la impresión automática"}
-              </p>
+        {/* Dispositivos conectados */}
+        <div>
+          <p className="text-white/50 text-xs uppercase tracking-wide px-1 mb-2">
+            Dispositivos conectados · {connectedDevices.length}
+          </p>
+          {connectedDevices.length === 0 ? (
+            <div className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-2xl ring-1 ring-white/10">
+              <Monitor className="w-4 h-4 text-white/20 shrink-0" />
+              <p className="text-white/30 text-sm">Conectando...</p>
             </div>
-          </div>
-          <div className={`w-10 h-6 rounded-full transition-colors relative ${isMainPrinter ? "bg-emerald-500" : "bg-white/15"}`}>
-            <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${isMainPrinter ? "left-5" : "left-1"}`} />
-          </div>
-        </button>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {connectedDevices.map((d) => {
+                const isMe = d.deviceId === deviceId;
+                const isMaster = d.deviceId === masterDeviceId;
+                const isOffline = !d.online;
+                return (
+                  <li
+                    key={d.deviceId}
+                    className={`flex items-center justify-between px-4 py-3 rounded-2xl ring-1 transition-colors ${
+                      isMaster && !isOffline
+                        ? "bg-emerald-500/15 ring-emerald-500/30"
+                        : isMaster && isOffline
+                        ? "bg-amber-500/10 ring-amber-500/20"
+                        : "bg-white/5 ring-white/10"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {isMaster ? (
+                        <Crown className={`w-4 h-4 shrink-0 ${isOffline ? "text-amber-400/60" : "text-emerald-400"}`} />
+                      ) : (
+                        <Monitor className="w-4 h-4 text-white/30 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className={`text-sm font-medium truncate ${
+                          isMaster && !isOffline ? "text-emerald-300"
+                          : isMaster && isOffline ? "text-amber-300/70"
+                          : "text-white/70"
+                        }`}>
+                          {isMe ? "Este dispositivo" : "Dispositivo"}
+                          {isMaster && !isOffline && " · Master"}
+                          {isMaster && isOffline && " · Master (offline)"}
+                        </p>
+                        <p className="text-xs text-white/30 font-mono">{d.deviceId.slice(0, 8)}</p>
+                      </div>
+                    </div>
+                    {!isMaster && (
+                      <button
+                        onClick={() => setMaster(d.deviceId)}
+                        className="ml-3 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white/70 hover:text-white text-xs rounded-full transition-colors shrink-0"
+                      >
+                        Set Master
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
 
         {/* Content */}
-        {!selectedBranch ? (
+        {branchesLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin text-white/50" />
+          </div>
+        ) : !selectedBranch ? (
           <div className="flex-1 flex items-center justify-center text-white/40 text-sm">
             Selecciona una sucursal para ver sus impresoras
           </div>

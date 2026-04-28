@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getPrinters, type PrinterRecord } from "../services/api";
 
 const BRANCH_KEY = "crew_branch_id";
-const IS_PRINTER_KEY = "crew_is_printer";
+const DEVICE_ID_KEY = "crew_device_id";
 
 export interface PrintJobData {
   branchId: string;
@@ -119,6 +119,7 @@ function buildTicket(
 export function usePrinting() {
   const printersRef = useRef<PrinterRecord[]>([]);
   const branchIdRef = useRef<string | null>(null);
+  const masterDeviceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const branchId = localStorage.getItem(BRANCH_KEY);
@@ -140,13 +141,14 @@ export function usePrinting() {
   }, []);
 
   const printJob = useCallback(async (data: PrintJobData) => {
-    const isPrinter = localStorage.getItem(IS_PRINTER_KEY);
+    const myDeviceId = localStorage.getItem(DEVICE_ID_KEY);
+    const masterDeviceId = masterDeviceIdRef.current;
     console.log(
-      `[PRINT] printJob llamado — isPrinter=${isPrinter} dataBranch=${data.branchId} myBranch=${branchIdRef.current}`,
+      `[PRINT] printJob llamado — myDevice=${myDeviceId} master=${masterDeviceId} dataBranch=${data.branchId} myBranch=${branchIdRef.current}`,
     );
 
-    if (isPrinter !== "true") {
-      console.log("[PRINT] Omitido — este dispositivo no es impresora");
+    if (!myDeviceId || myDeviceId !== masterDeviceId) {
+      console.log("[PRINT] Omitido — este dispositivo no es Master");
       return;
     }
     if (data.branchId !== branchIdRef.current) {
@@ -208,5 +210,9 @@ export function usePrinting() {
     }
   }, []);
 
-  return { printJob };
+  const setMasterDeviceId = useCallback((id: string | null) => {
+    masterDeviceIdRef.current = id;
+  }, []);
+
+  return { printJob, setMasterDeviceId };
 }

@@ -36,6 +36,7 @@ export default function OrderCard({
   const delivered = order.dishes.filter((d) => d.status === "delivered").length;
   const total = order.dishes.length;
 
+
   return (
     <div
       className="rounded-2xl overflow-hidden"
@@ -88,6 +89,62 @@ export default function OrderCard({
           />
         ))}
       </div>
+
+      {/* Pagos flex_bill */}
+      {order.orderType === "flex_bill" &&
+        (order.totalAmount != null ||
+          order.paidAmount != null ||
+          (order.payments?.length ?? 0) > 0) && (
+          <div className="px-5 pb-5 pt-2 border-t border-white/10 flex flex-col gap-2">
+            {order.orderType === "flex_bill" &&
+              (order.totalAmount != null || order.paidAmount != null) && (
+                <div className="flex gap-3">
+                  <div className="flex flex-col items-center flex-1">
+                    <span className="text-xs text-white/40">Total</span>
+                    <span className="text-sm font-semibold text-white">
+                      ${(order.totalAmount ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center flex-1">
+                    <span className="text-xs text-white/40">Pagado</span>
+                    <span className="text-sm font-semibold text-emerald-400">
+                      ${(order.paidAmount ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex flex-col items-center flex-1">
+                    <span className="text-xs text-white/40">Restante</span>
+                    <span
+                      className={`text-sm font-semibold ${
+                        (order.remainingAmount ?? 0) > 0
+                          ? "text-amber-400"
+                          : "text-emerald-400"
+                      }`}
+                    >
+                      ${(order.remainingAmount ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            {(order.payments?.length ?? 0) > 0 && (
+              <div className="flex flex-col divide-y divide-white/10 border-t border-white/10 pt-2">
+                {order.payments!.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between text-xs gap-2 py-1.5">
+                    <span className="text-white/40">{formatTime(p.createdAt)}</span>
+                    {p.guestName && (
+                      <span className="text-white/60">{p.guestName}</span>
+                    )}
+                    <span className="text-emerald-400 font-medium">
+                      ${p.baseAmount.toFixed(2)}
+                    </span>
+                    {p.tipAmount > 0 && (
+                      <span className="text-white/30">+${p.tipAmount.toFixed(2)} prop</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
     </div>
   );
 }

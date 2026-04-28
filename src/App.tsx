@@ -4,9 +4,13 @@ import { Mail, KeyRound, Loader2, Eye, EyeOff } from "lucide-react";
 import Kitchen from "./pages/Kitchen";
 import Printers from "./pages/Printers";
 import { useSocket } from "./hooks/useSocket";
+import type { CrewDevice } from "./hooks/useSocket";
 import { usePrinting } from "./hooks/usePrinting";
 import { useKitchenOrders } from "./hooks/useKitchenOrders";
+import { getBranches } from "./services/api";
+import type { Branch } from "./services/api";
 import type { DishStatus } from "./types";
+import { getOrCreateDeviceId } from "./utils/deviceId";
 
 type Page = "kitchen" | "printers";
 
@@ -60,12 +64,19 @@ async function sendDesktopNotification(title: string, body: string) {
 }
 
 export default function App() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   const { signIn, setActive } = useSignIn();
   const [page, setPage] = useState<Page>("kitchen");
   const [branchId, setBranchId] = useState<string | null>(
     () => localStorage.getItem("crew_branch_id"),
   );
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
+
+  // Identidad y presencia de dispositivos
+  const deviceId = getOrCreateDeviceId();
+  const [connectedDevices, setConnectedDevices] = useState<CrewDevice[]>([]);
+  const [masterDeviceId, setMasterDeviceId] = useState<string | null>(null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,8 +106,44 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
+  // Cargar sucursales al estar autenticado
+  useEffect(() => {
+    if (!isSignedIn) return;
+    setBranchesLoading(true);
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const list = await getBranches(token);
+        setBranches(list);
+      } catch {} finally {
+        setBranchesLoading(false);
+      }
+    })();
+  }, [isSignedIn, getToken]);
+
+  const handleBranchChange = useCallback((id: string) => {
+    setBranchId((prev) => {
+      if (id !== prev) {
+        setConnectedDevices([]);
+        setMasterDeviceId(null);
+      }
+      return id;
+    });
+    localStorage.setItem("crew_branch_id", id);
+  }, []);
+
   // Hooks que deben vivir toda la sesión (independiente de la página activa)
-  const { printJob } = usePrinting();
+  const { printJob, setMasterDeviceId: setPrintingMaster } = usePrinting();
+
+  const handleDevicesUpdated = useCallback(
+    (devices: CrewDevice[], master: string | null) => {
+      setConnectedDevices(devices);
+      setMasterDeviceId(master);
+      setPrintingMaster(master);
+    },
+    [setPrintingMaster],
+  );
 
   const {
     orders,
@@ -106,7 +153,7 @@ export default function App() {
     updateDish,
     removeOrder,
     updateDishFromSocket,
-  } = useKitchenOrders();
+  } = useKitchenOrders(branchId);
 
   const handleOrderClosed = useCallback(
     (orderId: string) => removeOrder(orderId),
@@ -127,12 +174,14 @@ export default function App() {
     showWindowIfNeeded();
   }, [fetchOrders]);
 
-  useSocket({
+  const { setMaster } = useSocket({
     branchId,
+    deviceId,
     onOrderClosed: handleOrderClosed,
     onDishStatusChanged: handleDishStatusChanged,
     onRefetch: handleRefetch,
     onPrintJob: printJob,
+    onDevicesUpdated: handleDevicesUpdated,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -259,6 +308,11 @@ export default function App() {
           setBranchId(localStorage.getItem("crew_branch_id"));
           setPage("kitchen");
         }}
+        deviceId={deviceId}
+        connectedDevices={connectedDevices}
+        masterDeviceId={masterDeviceId}
+        setMaster={setMaster}
+        onBranchChange={handleBranchChange}
       />
     );
   }
@@ -272,6 +326,10 @@ export default function App() {
       fetchOrders={fetchOrders}
       updateDish={updateDish}
       newOrderAlert={newOrderAlert}
+      branches={branches}
+      branchesLoading={branchesLoading}
+      branchId={branchId}
+      onBranchChange={handleBranchChange}
     />
   );
 }
