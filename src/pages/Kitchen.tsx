@@ -4,7 +4,7 @@ import { LogOut, PrinterIcon, RefreshCw, ChevronDown, Check } from "lucide-react
 import OrderCarousel from "../components/OrderCarousel";
 import { deleteFcmToken } from "../services/api";
 import type { Branch } from "../services/api";
-import type { DishStatus, Order } from "../types";
+import type { DishStatus, CookingStatus, Order } from "../types";
 
 async function showWindow() {
   try {
@@ -66,6 +66,7 @@ interface Props {
     dishId: string,
     status: DishStatus,
   ) => Promise<void>;
+  updateOrderCookingStatus: (orderId: string, status: CookingStatus) => Promise<void>;
   newOrderAlert: boolean;
   branches: Branch[];
   branchesLoading: boolean;
@@ -80,6 +81,7 @@ export default function Kitchen({
   error,
   fetchOrders,
   updateDish,
+  updateOrderCookingStatus,
   newOrderAlert,
   branches,
   branchesLoading,
@@ -273,7 +275,11 @@ export default function Kitchen({
             </button>
           </div>
         ) : (
-          <OrderCarousel orders={orders} onDishStatusChange={updateDish} />
+          <OrderCarousel
+            orders={orders}
+            onDishStatusChange={updateDish}
+            onOrderCookingStatusChange={updateOrderCookingStatus}
+          />
         )}
       </div>
     </div>

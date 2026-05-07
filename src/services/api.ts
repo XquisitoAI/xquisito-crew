@@ -50,6 +50,17 @@ export async function updateDishStatus(
   });
 }
 
+export async function updatePickAndGoOrderCookingStatus(
+  orderId: string,
+  status: string,
+  token: string,
+) {
+  return authFetch(`/api/pick-and-go/orders/${orderId}/cooking-status`, token, {
+    method: "PUT",
+    body: JSON.stringify({ cooking_status: status }),
+  });
+}
+
 export async function saveFcmToken(
   token: string,
   fcmToken: string,

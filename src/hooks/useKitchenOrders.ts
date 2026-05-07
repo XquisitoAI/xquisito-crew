@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@clerk/clerk-react";
-import type { Order, DishStatus } from "../types";
-import { getActiveOrders, updateDishStatus } from "../services/api";
+import type { Order, DishStatus, CookingStatus } from "../types";
+import { getActiveOrders, updateDishStatus, updatePickAndGoOrderCookingStatus } from "../services/api";
 
 export function useKitchenOrders(branchId: string | null) {
   const { getToken } = useAuth();
@@ -78,6 +78,32 @@ export function useKitchenOrders(branchId: string | null) {
     [getToken, fetchOrders],
   );
 
+  const updateOrderCookingStatus = useCallback(
+    async (orderId: string, status: CookingStatus) => {
+      // Optimistic update
+      setOrders((prev) =>
+        prev.map((order) =>
+          order.id === orderId ? { ...order, cookingStatus: status } : order,
+        ),
+      );
+
+      try {
+        const token = await getToken();
+        if (!token) return;
+        await updatePickAndGoOrderCookingStatus(orderId, status, token);
+      } catch (e) {
+        fetchOrders();
+        return;
+      }
+
+      // Si el pedido fue entregado, removerlo de la lista
+      if (status === "delivered") {
+        setOrders((prev) => prev.filter((order) => order.id !== orderId));
+      }
+    },
+    [getToken, fetchOrders],
+  );
+
   // Agregar nueva orden (desde socket)
   const addOrder = useCallback((order: Order) => {
     setOrders((prev) => {
@@ -116,6 +142,7 @@ export function useKitchenOrders(branchId: string | null) {
     error,
     fetchOrders,
     updateDish,
+    updateOrderCookingStatus,
     addOrder,
     removeOrder,
     updateDishFromSocket,

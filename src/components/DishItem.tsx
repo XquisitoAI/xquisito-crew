@@ -37,11 +37,16 @@ const BUTTON_ACTIVE: Record<DishStatus, string> = {
 interface DishItemProps {
   dish: Dish;
   onStatusChange: (dishId: string, status: DishStatus) => void;
+  hideStatusButtons?: boolean;
 }
 
 const STATUSES: DishStatus[] = ["preparing", "ready", "delivered"];
 
-export default function DishItem({ dish, onStatusChange }: DishItemProps) {
+export default function DishItem({
+  dish,
+  onStatusChange,
+  hideStatusButtons = false,
+}: DishItemProps) {
   return (
     <div className="flex flex-col gap-3 pb-4 border-b border-white/10 last:border-0 last:pb-0">
       {/* Info del plato */}
@@ -90,30 +95,34 @@ export default function DishItem({ dish, onStatusChange }: DishItemProps) {
             )}
           </div>
         </div>
-        <span
-          className={`text-xs px-2.5 py-1 rounded-full border font-medium shrink-0 ${STATUS_BADGE[dish.status]}`}
-        >
-          {STATUS_LABELS[dish.status]}
-        </span>
+        {!hideStatusButtons && (
+          <span
+            className={`text-xs px-2.5 py-1 rounded-full border font-medium shrink-0 ${STATUS_BADGE[dish.status]}`}
+          >
+            {STATUS_LABELS[dish.status]}
+          </span>
+        )}
       </div>
 
       {/* Botones de status */}
-      <div className="flex gap-2">
-        {STATUSES.map((s) => (
-          <button
-            key={s}
-            onClick={() => onStatusChange(dish.id, s)}
-            disabled={dish.status === s}
-            className={`flex-1 py-1 text-sm rounded-full font-medium border transition-all active:scale-95 ${
-              dish.status === s
-                ? BUTTON_ACTIVE[s]
-                : "bg-transparent text-white/50 border-white/20 hover:border-white/40"
-            }`}
-          >
-            {STATUS_LABELS[s]}
-          </button>
-        ))}
-      </div>
+      {!hideStatusButtons && (
+        <div className="flex gap-2">
+          {STATUSES.map((s) => (
+            <button
+              key={s}
+              onClick={() => onStatusChange(dish.id, s)}
+              disabled={dish.status === s}
+              className={`flex-1 py-1 text-sm rounded-full font-medium border transition-all active:scale-95 ${
+                dish.status === s
+                  ? BUTTON_ACTIVE[s]
+                  : "bg-transparent text-white/50 border-white/20 hover:border-white/40"
+              }`}
+            >
+              {STATUS_LABELS[s]}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

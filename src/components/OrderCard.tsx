@@ -1,4 +1,4 @@
-import type { Order, DishStatus } from "../types";
+import type { Order, DishStatus, CookingStatus } from "../types";
 import DishItem from "./DishItem";
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
@@ -17,13 +17,37 @@ const ORDER_TYPE_COLORS: Record<string, string> = {
   flex_bill: "bg-purple-500/20 text-purple-300",
 };
 
+const COOKING_STATUS_LABELS: Record<CookingStatus, string> = {
+  preparing: "Preparando",
+  ready: "Listo",
+  delivered: "Entregado",
+};
+
+const COOKING_STATUS_BADGE: Record<CookingStatus, string> = {
+  preparing: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  ready: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  delivered: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+};
+
+const COOKING_BUTTON_ACTIVE: Record<CookingStatus, string> = {
+  preparing: "bg-amber-500 text-white border-amber-500",
+  ready: "bg-blue-500 text-white border-blue-500",
+  delivered: "bg-emerald-500 text-white border-emerald-500",
+};
+
+const COOKING_STATUSES: CookingStatus[] = ["preparing", "ready", "delivered"];
+
 interface OrderCardProps {
   order: Order;
   onDishStatusChange: (dishId: string, status: DishStatus) => void;
+  onOrderCookingStatusChange?: (orderId: string, status: CookingStatus) => void;
 }
 
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("es-MX", {
+  return new Date(iso).toLocaleString("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -32,10 +56,12 @@ function formatTime(iso: string) {
 export default function OrderCard({
   order,
   onDishStatusChange,
+  onOrderCookingStatusChange,
 }: OrderCardProps) {
+  const isPickAndGo = order.orderType === "pick_and_go";
   const delivered = order.dishes.filter((d) => d.status === "delivered").length;
   const total = order.dishes.length;
-
+  const currentCookingStatus = order.cookingStatus ?? "preparing";
 
   return (
     <div
@@ -69,9 +95,17 @@ export default function OrderCard({
             </span>
           )}
         </div>
-        <p className="text-sm text-white/50 mt-0.5">
-          {delivered}/{total} entregados
-        </p>
+        {isPickAndGo ? (
+          <span
+            className={`mt-0.5 text-xs px-2.5 py-1 rounded-full border font-medium ${COOKING_STATUS_BADGE[currentCookingStatus]}`}
+          >
+            {COOKING_STATUS_LABELS[currentCookingStatus]}
+          </span>
+        ) : (
+          <p className="text-sm text-white/50 mt-0.5">
+            {delivered}/{total} entregados
+          </p>
+        )}
         {order.orderNotes && (
           <p className="text-sm text-white/80 mt-1.5">
             Comentarios: {order.orderNotes}
@@ -86,9 +120,32 @@ export default function OrderCard({
             key={dish.id}
             dish={dish}
             onStatusChange={onDishStatusChange}
+            hideStatusButtons={isPickAndGo}
           />
         ))}
       </div>
+
+      {/* Order-level cooking status buttons for Pick & Go */}
+      {isPickAndGo && (
+        <div className="px-5 pb-5 pt-2 border-t border-white/10">
+          <div className="flex gap-2">
+            {COOKING_STATUSES.map((s) => (
+              <button
+                key={s}
+                onClick={() => onOrderCookingStatusChange?.(order.id, s)}
+                disabled={currentCookingStatus === s}
+                className={`flex-1 py-1 text-sm rounded-full font-medium border transition-all active:scale-95 ${
+                  currentCookingStatus === s
+                    ? COOKING_BUTTON_ACTIVE[s]
+                    : "bg-transparent text-white/50 border-white/20 hover:border-white/40"
+                }`}
+              >
+                {COOKING_STATUS_LABELS[s]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Pagos flex_bill */}
       {order.orderType === "flex_bill" &&
@@ -128,8 +185,13 @@ export default function OrderCard({
             {(order.payments?.length ?? 0) > 0 && (
               <div className="flex flex-col divide-y divide-white/10 border-t border-white/10 pt-2">
                 {order.payments!.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between text-xs gap-2 py-1.5">
-                    <span className="text-white/40">{formatTime(p.createdAt)}</span>
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between text-xs gap-2 py-1.5"
+                  >
+                    <span className="text-white/40">
+                      {formatTime(p.createdAt)}
+                    </span>
                     {p.guestName && (
                       <span className="text-white/60">{p.guestName}</span>
                     )}
@@ -137,7 +199,9 @@ export default function OrderCard({
                       ${p.baseAmount.toFixed(2)}
                     </span>
                     {p.tipAmount > 0 && (
-                      <span className="text-white/30">+${p.tipAmount.toFixed(2)} prop</span>
+                      <span className="text-white/30">
+                        +${p.tipAmount.toFixed(2)} prop
+                      </span>
                     )}
                   </div>
                 ))}

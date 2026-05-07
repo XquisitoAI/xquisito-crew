@@ -20,8 +20,12 @@ interface UseSocketProps {
   onOrderClosed: (orderId: string) => void;
   onDishStatusChanged: (dishId: string, status: DishStatus) => void;
   onRefetch: () => void;
+  onSilentRefetch?: () => void;
   onPrintJob?: (data: PrintJobData) => void;
-  onDevicesUpdated?: (devices: CrewDevice[], masterDeviceId: string | null) => void;
+  onDevicesUpdated?: (
+    devices: CrewDevice[],
+    masterDeviceId: string | null,
+  ) => void;
 }
 
 export function useSocket({
@@ -30,6 +34,7 @@ export function useSocket({
   onOrderClosed,
   onDishStatusChanged,
   onRefetch,
+  onSilentRefetch,
   onPrintJob,
   onDevicesUpdated,
 }: UseSocketProps) {
@@ -37,22 +42,40 @@ export function useSocket({
   const onOrderClosedRef = useRef(onOrderClosed);
   const onDishStatusChangedRef = useRef(onDishStatusChanged);
   const onRefetchRef = useRef(onRefetch);
+  const onSilentRefetchRef = useRef(onSilentRefetch);
   const onPrintJobRef = useRef(onPrintJob);
   const onDevicesUpdatedRef = useRef(onDevicesUpdated);
 
-  useEffect(() => { onOrderClosedRef.current = onOrderClosed; });
-  useEffect(() => { onDishStatusChangedRef.current = onDishStatusChanged; });
-  useEffect(() => { onRefetchRef.current = onRefetch; });
-  useEffect(() => { onPrintJobRef.current = onPrintJob; });
-  useEffect(() => { onDevicesUpdatedRef.current = onDevicesUpdated; });
+  useEffect(() => {
+    onOrderClosedRef.current = onOrderClosed;
+  });
+  useEffect(() => {
+    onDishStatusChangedRef.current = onDishStatusChanged;
+  });
+  useEffect(() => {
+    onRefetchRef.current = onRefetch;
+  });
+  useEffect(() => {
+    onSilentRefetchRef.current = onSilentRefetch;
+  });
+  useEffect(() => {
+    onPrintJobRef.current = onPrintJob;
+  });
+  useEffect(() => {
+    onDevicesUpdatedRef.current = onDevicesUpdated;
+  });
 
   const socketRef = useRef<Socket | null>(null);
 
   // El socket se conecta/reconecta cuando cambia branchId
   useEffect(() => {
-    console.log(`[CREW:SOCKET] Iniciando — branchId=${branchId} deviceId=${deviceId}`);
+    console.log(
+      `[CREW:SOCKET] Iniciando — branchId=${branchId} deviceId=${deviceId}`,
+    );
     if (!branchId) {
-      console.warn("[CREW:SOCKET] No branchId configurado, socket no conectado");
+      console.warn(
+        "[CREW:SOCKET] No branchId configurado, socket no conectado",
+      );
       return;
     }
 
@@ -75,14 +98,25 @@ export function useSocket({
         `[CREW:SOCKET] 🏠 Sala unida — restaurant=${data?.restaurantId} branch=${data?.branchId} master=${data?.masterDeviceId}`,
       );
       if (data?.devices !== undefined) {
-        onDevicesUpdatedRef.current?.(data.devices, data.masterDeviceId ?? null);
+        onDevicesUpdatedRef.current?.(
+          data.devices,
+          data.masterDeviceId ?? null,
+        );
       }
     });
 
     socket.on(
       "crew:devices-updated",
-      ({ devices, masterDeviceId }: { devices: CrewDevice[]; masterDeviceId: string | null }) => {
-        console.log(`[CREW:SOCKET] 👥 Dispositivos actualizados — count=${devices.length} master=${masterDeviceId}`);
+      ({
+        devices,
+        masterDeviceId,
+      }: {
+        devices: CrewDevice[];
+        masterDeviceId: string | null;
+      }) => {
+        console.log(
+          `[CREW:SOCKET] 👥 Dispositivos actualizados — count=${devices.length} master=${masterDeviceId}`,
+        );
         onDevicesUpdatedRef.current?.(devices, masterDeviceId);
       },
     );
@@ -99,6 +133,12 @@ export function useSocket({
       (data: { order: Order; action: string }) => {
         if (data.action === "closed") {
           onOrderClosedRef.current(data.order.id);
+        } else if (data.action === "updated") {
+          if (onSilentRefetchRef.current) {
+            onSilentRefetchRef.current();
+          } else {
+            onRefetchRef.current();
+          }
         }
       },
     );

@@ -1,14 +1,24 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { Order, DishStatus } from "../types";
+import type { Order, DishStatus, CookingStatus } from "../types";
 import OrderCard from "./OrderCard";
 
 interface OrderCarouselProps {
   orders: Order[];
-  onDishStatusChange: (orderId: string, orderType: string, dishId: string, status: DishStatus) => void;
+  onDishStatusChange: (
+    orderId: string,
+    orderType: string,
+    dishId: string,
+    status: DishStatus,
+  ) => void;
+  onOrderCookingStatusChange: (orderId: string, status: CookingStatus) => void;
 }
 
-export default function OrderCarousel({ orders, onDishStatusChange }: OrderCarouselProps) {
+export default function OrderCarousel({
+  orders,
+  onDishStatusChange,
+  onOrderCookingStatusChange,
+}: OrderCarouselProps) {
   const [index, setIndex] = useState(0);
   const safeIndex = Math.min(index, Math.max(0, orders.length - 1));
 
@@ -17,7 +27,9 @@ export default function OrderCarousel({ orders, onDishStatusChange }: OrderCarou
       <div className="flex-1 flex flex-col items-center justify-center gap-3">
         <div className="text-5xl">✅</div>
         <p className="text-lg font-medium text-white">Sin órdenes pendientes</p>
-        <p className="text-sm text-white/50">Todas las órdenes han sido entregadas</p>
+        <p className="text-sm text-white/50">
+          Todas las órdenes han sido entregadas
+        </p>
       </div>
     );
   }
@@ -70,6 +82,7 @@ export default function OrderCarousel({ orders, onDishStatusChange }: OrderCarou
         onDishStatusChange={(dishId, status) =>
           onDishStatusChange(order.id, order.orderType, dishId, status)
         }
+        onOrderCookingStatusChange={onOrderCookingStatusChange}
       />
     </div>
   );

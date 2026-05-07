@@ -151,6 +151,7 @@ export default function App() {
     error: ordersError,
     fetchOrders,
     updateDish,
+    updateOrderCookingStatus,
     removeOrder,
     updateDishFromSocket,
   } = useKitchenOrders(branchId);
@@ -174,12 +175,17 @@ export default function App() {
     showWindowIfNeeded();
   }, [fetchOrders]);
 
+  const handleSilentRefetch = useCallback(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
   const { setMaster } = useSocket({
     branchId,
     deviceId,
     onOrderClosed: handleOrderClosed,
     onDishStatusChanged: handleDishStatusChanged,
     onRefetch: handleRefetch,
+    onSilentRefetch: handleSilentRefetch,
     onPrintJob: printJob,
     onDevicesUpdated: handleDevicesUpdated,
   });
@@ -325,6 +331,7 @@ export default function App() {
       error={ordersError}
       fetchOrders={fetchOrders}
       updateDish={updateDish}
+      updateOrderCookingStatus={updateOrderCookingStatus}
       newOrderAlert={newOrderAlert}
       branches={branches}
       branchesLoading={branchesLoading}

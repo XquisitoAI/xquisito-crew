@@ -1,5 +1,7 @@
 export type DishStatus = "preparing" | "ready" | "delivered";
 
+export type CookingStatus = "preparing" | "ready" | "delivered";
+
 export type OrderType = "tap" | "pick_and_go" | "room" | "tap_pay" | "flex_bill";
 
 export interface CustomFieldOption {
@@ -50,4 +52,5 @@ export interface Order {
   remainingAmount?: number | null;
   payments?: PaymentTransaction[];
   dishes: Dish[];
+  cookingStatus?: CookingStatus;
 }
