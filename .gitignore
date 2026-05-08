@@ -14,7 +14,9 @@ dist-ssr
 
 # Tauri build output
 src-tauri/target/
-src-tauri/gen/
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/app/.cxx/
 
 # Editor directories and files
 .vscode/*

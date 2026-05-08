@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "446721623777",
+    "project_id": "xquisito-crew",
+    "storage_bucket": "xquisito-crew.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:446721623777:android:c802d76dcdcee532f1d9a0",
+        "android_client_info": {
+          "package_name": "com.xquisito.crew"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA9SeqFVw7FXL-mHFWJKUdGcF8LtGG_CL8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
