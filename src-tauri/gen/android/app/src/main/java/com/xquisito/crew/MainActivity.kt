@@ -2,8 +2,11 @@ package com.xquisito.crew
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import androidx.activity.enableEdgeToEdge
 import com.google.firebase.messaging.FirebaseMessaging
 import java.io.File
@@ -14,11 +17,35 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
 
     createNotificationChannel()
+    startForegroundService()
+    requestBatteryOptimizationExemption()
 
     FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
       if (task.isSuccessful) {
         val token = task.result
         saveFcmTokenToFile(token)
+      }
+    }
+  }
+
+  private fun startForegroundService() {
+    val intent = Intent(this, XquisitoForegroundService::class.java)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      startForegroundService(intent)
+    } else {
+      startService(intent)
+    }
+  }
+
+  private fun requestBatteryOptimizationExemption() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      val pm = getSystemService(POWER_SERVICE) as PowerManager
+      if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+        val intent = Intent(
+          android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+          Uri.parse("package:$packageName")
+        )
+        startActivity(intent)
       }
     }
   }
