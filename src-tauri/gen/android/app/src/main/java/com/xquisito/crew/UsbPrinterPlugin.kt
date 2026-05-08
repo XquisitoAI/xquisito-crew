@@ -11,11 +11,8 @@ import app.tauri.plugin.Plugin
 import com.starmicronics.stario10.InterfaceType
 import com.starmicronics.stario10.StarConnectionSettings
 import com.starmicronics.stario10.StarDeviceDiscoveryManager
-import com.starmicronics.stario10.StarDeviceDiscoveryManagerCallback
+import com.starmicronics.stario10.StarDeviceDiscoveryManagerFactory
 import com.starmicronics.stario10.StarPrinter
-import com.starmicronics.stario10.starxpand.DocumentBuilder
-import com.starmicronics.stario10.starxpand.PrinterBuilder
-import com.starmicronics.stario10.starxpand.StarXpandCommandBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,13 +39,13 @@ class UsbPrinterPlugin(private val activity: Activity) : Plugin(activity) {
         val found = mutableListOf<StarPrinter>()
         activity.runOnUiThread {
             try {
-                val manager = StarDeviceDiscoveryManager(
+                val manager = StarDeviceDiscoveryManagerFactory.create(
                     listOf(InterfaceType.Usb),
                     activity
                 )
                 discoveryManager = manager
                 manager.discoveryTime = 10000
-                manager.callback = object : StarDeviceDiscoveryManagerCallback {
+                manager.callback = object : StarDeviceDiscoveryManager.Callback {
                     override fun onPrinterFound(printer: StarPrinter) {
                         found.add(printer)
                     }
@@ -84,12 +81,8 @@ class UsbPrinterPlugin(private val activity: Activity) : Plugin(activity) {
             )
             try {
                 printer.openAsync().await()
-                val data = args.data.map { it.toByte() }.toByteArray()
-                val builder = StarXpandCommandBuilder()
-                builder.addDocument(
-                    DocumentBuilder().addPrinter(PrinterBuilder().addRaw(data))
-                )
-                printer.printAsync(builder.getCommands()).await()
+                val data = args.data.map { it.toByte() }
+                printer.printRawDataAsync(data).await()
                 withContext(Dispatchers.Main) { invoke.resolve() }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -111,11 +104,7 @@ class UsbPrinterPlugin(private val activity: Activity) : Plugin(activity) {
             )
             try {
                 printer.openAsync().await()
-                val builder = StarXpandCommandBuilder()
-                builder.addDocument(
-                    DocumentBuilder().addPrinter(PrinterBuilder().addRaw(buildTestTicket()))
-                )
-                printer.printAsync(builder.getCommands()).await()
+                printer.printRawDataAsync(buildTestTicket().toList()).await()
                 withContext(Dispatchers.Main) { invoke.resolve() }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
